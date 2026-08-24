@@ -1,17 +1,19 @@
 """Converts an ElbowParameters into the project's intermediate JSON schema.
 
-Schema version "piping-component-generator/0.1" as defined in the project
-spec. Fields the source data does not provide are omitted rather than
+Schema version "piping-component-generator/0.2": V0.1's flat parameter
+fields plus (when a SegmentedElbowGeometry is supplied) the 3D gajo/stub
+breakdown. Fields the source data does not provide are omitted rather than
 filled with invented values (see data/repository.py LookupResult).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
+from core.geometry.segmented_elbow import ElbowSegment, SegmentedElbowGeometry
 from core.models.elbow import ElbowParameters
 
-SCHEMA_VERSION = "piping-component-generator/0.1"
+SCHEMA_VERSION = "piping-component-generator/0.2"
 
 
 def _round_vector(vector, ndigits: int = 6):
@@ -31,8 +33,26 @@ def _port_to_dict(port) -> Dict[str, Any]:
     }
 
 
-def elbow_to_dict(params: ElbowParameters) -> Dict[str, Any]:
-    """Builds the JSON-ready dict for one elbow component."""
+def _segment_to_dict(segment: ElbowSegment) -> Dict[str, Any]:
+    return {
+        "index": segment.index,
+        "label": segment.label,
+        "angle_deg": segment.angle_deg,
+        "cumulative_angle_deg": segment.cumulative_angle_deg,
+        "start_point_mm": _round_vector(segment.axis_start),
+        "end_point_mm": _round_vector(segment.axis_end),
+        "direction": _round_vector(segment.direction),
+    }
+
+
+def elbow_to_dict(params: ElbowParameters, geometry: Optional[SegmentedElbowGeometry] = None) -> Dict[str, Any]:
+    """Builds the JSON-ready dict for one elbow component.
+
+    `geometry` is optional (a SegmentedElbowGeometry from
+    core/geometry/segmented_elbow.py) and only adds the 3D "segments"
+    (gajo) breakdown and the two straight-leg stubs; every V0.1 field is
+    still produced without it.
+    """
     config = params.segment_configuration
     component: Dict[str, Any] = {
         "type": params.component_type,
@@ -64,4 +84,12 @@ def elbow_to_dict(params: ElbowParameters) -> Dict[str, Any]:
         "notes": params.notes,
         "ports": [_port_to_dict(p) for p in params.ports],
     }
+
+    if geometry is not None:
+        component["segments_available"] = geometry.segments_available
+        component["segments_unavailable_reason"] = geometry.unavailable_reason
+        component["segments"] = [_segment_to_dict(s) for s in geometry.segments] if geometry.segments else []
+        component["leg1_stub"] = _segment_to_dict(geometry.leg1_stub)
+        component["leg2_stub"] = _segment_to_dict(geometry.leg2_stub)
+
     return {"schema": SCHEMA_VERSION, "component": component}

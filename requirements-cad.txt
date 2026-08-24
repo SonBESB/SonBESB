@@ -1,0 +1,5 @@
+# Optional: enables STEP/STL export (cad/backends/cadquery_backend.py).
+# The rest of the app, including the interactive 3D preview, works
+# without this — see core/geometry/segmented_elbow.py's module docstring.
+-r requirements.txt
+cadquery>=2.8

@@ -1,4 +1,4 @@
-# Arquitectura — V0.1
+# Arquitectura
 
 ## Pipeline
 
@@ -13,13 +13,17 @@ VALIDACIONES        core/validation/  (Modo B: reglas geometricas basicas)
                     core/standards/   (alcance normativo DIN 16963)
   |
   v
-GEOMETRIA           core/geometry/  (puntos 2D: vertice, arco, P1/P2, cuerpo del codo)
+GEOMETRIA           core/geometry/elbow_geometry.py     (V0.1: arco suave 2D, vista dimensional)
+                    core/geometry/segmented_elbow.py    (V0.2: gajos + planos a inglete, 3D real)
+                    core/geometry/geometry_validation.py (autochequeo, GEOMETRY_VALIDATION_ERROR)
   |
   v
-INTERFAZ            ui/  (Streamlit + Plotly; solo llama a components/, nunca a data/ o a core/geometry directamente para construir el modelo)
+INTERFAZ            ui/  (Streamlit + Plotly 2D y 3D; solo llama a components/ y a core/geometry, nunca a data/ directamente)
   |
   v
-EXPORTADORES        core/serialization/  (JSON intermedio)
+EXPORTADORES        core/serialization/  (JSON intermedio, incluye "segments" cuando hay geometria 3D)
+                    core/geometry/tube_mesh.py  (malla numpy para el preview 3D, sin cadquery)
+                    cad/backends/  (CadQuery opcional, STEP/STL — experimental, desacoplado de core/)
                     plant3d/  (placeholders, sin API ficticia — etapa futura)
 ```
 
@@ -58,6 +62,44 @@ Los "segmentos" (uniones de termofusion entre tramos rectos del codo
 segmentado) se marcan sobre el arco en las posiciones angulares
 acumuladas de `segment_angles_deg`, cuando la fuente los desglosa (ver
 nota de ambigüedad para 30° en `docs/DATA_NOTES.md`).
+
+## Geometria 3D real (V0.2 — core/geometry/segmented_elbow.py)
+
+`elbow_geometry.py` sigue intacto: sigue siendo la vista 2D de
+validacion dimensional. `segmented_elbow.py` es un modulo nuevo,
+independiente, que construye el codo como realmente es fabricado —
+tramos rectos cilindricos huecos, cortados a inglete, no un barrido
+suave. Detalle matematico completo (sistema de coordenadas, formulas,
+generacion de gajos, tolerancias) en
+`docs/SEGMENTED_ELBOW_GEOMETRY.md`.
+
+Consumidores, todos independientes entre si:
+
+- `core/geometry/tube_mesh.py`: malla triangulada (numpy puro, sin
+  cadquery) para el preview 3D interactivo en Streamlit/Plotly. Esto es
+  deliberado: la vista 3D nunca debe depender de una instalacion de
+  CadQuery.
+- `cad/backends/cadquery_backend.py`: solido B-rep real (OpenCASCADE) solo
+  para exportacion STEP/STL experimental. Vive fuera de `core/` para que
+  `core/geometry` se pueda importar y testear sin la dependencia pesada.
+- `core/geometry/geometry_validation.py`: recalcula varias magnitudes por
+  formulas independientes (ley de cosenos para P1-P2, radio tabulado
+  contra cada punto de union, suma de angulos de los gajos) y levanta
+  `GeometryValidationError` si no coinciden dentro de tolerancia — nunca
+  ajusta en silencio.
+
+### Por que CadQuery (y por que no es una dependencia dura)
+
+Se evaluo instalando CadQuery directamente en este entorno: se resuelve
+solo via pip (~53s, trae OpenCASCADE/OCP, ~165MB), y construir un tubo
+hueco mitrado (dos circulos + extrude + corte booleano con una caja
+rotada) toma <15ms. STEP requiere un kernel B-rep real — no hay
+alternativa Python liviana seria para ese formato — asi que es la opcion
+correcta para exportacion CAD. Pero es una dependencia pesada y opcional
+(`requirements-cad.txt`, no `requirements.txt`): si no esta instalada,
+`CADQUERY_AVAILABLE=False` y el boton de exportar se deshabilita con un
+mensaje claro; el resto de la app (incluida la vista 3D) sigue
+funcionando igual.
 
 ## Separacion de modos
 

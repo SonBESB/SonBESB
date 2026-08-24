@@ -1,4 +1,4 @@
-"""Streamlit UI for the Piping Component Generator — V0.1 (HDPE segmented elbow).
+"""Streamlit UI for the Piping Component Generator — HDPE segmented elbow.
 
 This module only wires widgets to the domain layer
 (components/elbows/hdpe_segmented_elbow.py) and renders the result. It
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 import streamlit as st
@@ -17,13 +18,18 @@ import streamlit as st
 # repo root would otherwise not be on sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cad.backends.base_backend import CadBackendUnavailableError
+from cad.backends.cadquery_backend import CADQUERY_AVAILABLE, CadQueryElbowBackend
 from components.elbows.hdpe_segmented_elbow import build_custom, build_normalized
 from core.geometry.elbow_geometry import build_elbow_geometry
+from core.geometry.geometry_validation import GeometryValidationError, validate_segmented_elbow_geometry
+from core.geometry.segmented_elbow import build_segmented_elbow_geometry
 from core.models.common import DataAvailability, EndType
 from core.serialization.json_export import elbow_to_dict
 from core.validation.elbow_validation import Severity, has_blocking_errors
 from data.repository import ElbowRepository
 from ui.plotly_view import build_elbow_figure
+from ui.plotly_view3d import build_elbow_figure_3d
 from ui.results_view import build_result_rows
 
 st.set_page_config(page_title="Piping Component Generator", layout="wide")
@@ -68,8 +74,50 @@ def render_component(params, missing_fields, key_prefix: str, extra_notes=None) 
     fig = build_elbow_figure(geometry, title)
     st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_chart")
 
+    st.subheader("Vista previa 3D (segmentada)")
+    geometry_3d = build_segmented_elbow_geometry(params)
+    try:
+        validate_segmented_elbow_geometry(params, geometry_3d)
+        validation_ok = True
+    except GeometryValidationError as exc:
+        validation_ok = False
+        st.error("GEOMETRY_VALIDATION_ERROR — no se muestra la geometria 3D ni se incluye en el JSON.")
+        for failure in exc.failures:
+            st.code(
+                f"{failure.code}: esperado={failure.expected!r} obtenido={failure.found!r} "
+                f"diferencia={failure.difference!r}\n{failure.message}",
+                language="text",
+            )
+
+    if not geometry_3d.segments_available:
+        st.warning(
+            "Configuracion de segmentos NO DISPONIBLE para este angulo: "
+            f"{geometry_3d.unavailable_reason} No se genera geometria de gajos "
+            "(se muestran solo los tramos rectos Le, con un vacio real entre ellos)."
+        )
+
+    if validation_ok:
+        col_a, col_b, col_c, col_d = st.columns(4)
+        show_centerline = col_a.checkbox("Mostrar centerline", value=True, key=f"{key_prefix}_show_centerline")
+        show_ports = col_b.checkbox("Mostrar puertos", value=True, key=f"{key_prefix}_show_ports")
+        show_cut_planes = col_c.checkbox("Mostrar planos de union", value=False, key=f"{key_prefix}_show_planes")
+        show_labels = col_d.checkbox("Mostrar numeros de gajo", value=True, key=f"{key_prefix}_show_labels")
+
+        fig3d = build_elbow_figure_3d(
+            geometry_3d,
+            params,
+            title=title,
+            show_centerline=show_centerline,
+            show_ports=show_ports,
+            show_cut_planes=show_cut_planes,
+            show_segment_labels=show_labels,
+        )
+        st.plotly_chart(fig3d, use_container_width=True, key=f"{key_prefix}_chart3d")
+
+        render_cad_export(geometry_3d, params, key_prefix)
+
     st.subheader("Exportar componente (JSON)")
-    component_json = elbow_to_dict(params)
+    component_json = elbow_to_dict(params, geometry=geometry_3d if validation_ok else None)
     st.json(component_json)
     st.download_button(
         "Descargar JSON",
@@ -78,6 +126,45 @@ def render_component(params, missing_fields, key_prefix: str, extra_notes=None) 
         mime="application/json",
         key=f"{key_prefix}_download",
     )
+
+
+def render_cad_export(geometry_3d, params, key_prefix: str) -> None:
+    st.subheader("Exportar CAD (experimental — STEP / STL)")
+    st.caption(
+        "Solido generado con CadQuery/OpenCASCADE solo para validar la geometria. "
+        "No es todavia el mecanismo de importacion a AutoCAD Plant 3D."
+    )
+    if not CADQUERY_AVAILABLE:
+        st.info("cadquery no esta instalado en este entorno: la exportacion STEP/STL esta deshabilitada.")
+        return
+
+    if st.button("Generar solido CAD", key=f"{key_prefix}_build_cad"):
+        backend = CadQueryElbowBackend()
+        try:
+            with st.spinner("Construyendo solido (tubos huecos + cortes a inglete + union booleana)..."):
+                solid = backend.build_solid(geometry_3d, od_mm=params.od_mm, id_mm=params.inside_diameter_mm)
+                tmp_dir = Path(tempfile.mkdtemp(prefix="piping_cad_"))
+                step_path = backend.export_step(solid, tmp_dir / f"{key_prefix}_elbow.step")
+                stl_path = backend.export_stl(solid, tmp_dir / f"{key_prefix}_elbow.stl")
+        except CadBackendUnavailableError as exc:
+            st.error(str(exc))
+            return
+        st.session_state[f"{key_prefix}_step_bytes"] = step_path.read_bytes()
+        st.session_state[f"{key_prefix}_stl_bytes"] = stl_path.read_bytes()
+        st.success("Solido generado.")
+
+    step_bytes = st.session_state.get(f"{key_prefix}_step_bytes")
+    stl_bytes = st.session_state.get(f"{key_prefix}_stl_bytes")
+    if step_bytes and stl_bytes:
+        col1, col2 = st.columns(2)
+        col1.download_button(
+            "Descargar STEP", data=step_bytes, file_name=f"{key_prefix}_elbow.step",
+            mime="application/step", key=f"{key_prefix}_download_step",
+        )
+        col2.download_button(
+            "Descargar STL", data=stl_bytes, file_name=f"{key_prefix}_elbow.stl",
+            mime="model/stl", key=f"{key_prefix}_download_stl",
+        )
 
 
 def render_normalized_tab(repository: ElbowRepository) -> None:
@@ -162,8 +249,11 @@ def render_custom_tab() -> None:
 
 
 def main() -> None:
-    st.title("Piping Component Generator — V0.1")
-    st.caption("Codo HDPE segmentado PE100 (DIN 16963). Independiente de AutoCAD Plant 3D.")
+    st.title("Piping Component Generator — V0.2")
+    st.caption(
+        "Codo HDPE segmentado PE100 (DIN 16963), con motor geometrico 3D real "
+        "(gajos + planos a inglete). Independiente de AutoCAD Plant 3D."
+    )
 
     repository = get_repository()
 
