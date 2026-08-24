@@ -29,6 +29,14 @@ Point2D = Tuple[float, float]
 
 DEFAULT_ARC_SAMPLES = 48
 
+# Epistemic status of the Z = Le + R*tan(angle/2) relation (V0.2.2): it has
+# been checked against every DN x angle combination in the source Excel
+# (see docs/DATA_NOTES.md) and holds exactly, but it has NOT been checked
+# against the DIN 16963 standard's own text. Treat it — and label it,
+# anywhere it is surfaced (JSON, docs, UI) — as verified against this
+# project's source data, not as a formula directly attributed to DIN.
+GEOMETRIC_RELATION_VERIFIED_AGAINST_SOURCE_DATA = "GEOMETRIC_RELATION_VERIFIED_AGAINST_SOURCE_DATA"
+
 
 def calculate_z_mm(le_mm: float, radius_mm: float, angle_deg: float) -> float:
     """Z = Le + R * tan(angle / 2), verified against the source workbook."""

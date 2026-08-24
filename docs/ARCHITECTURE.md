@@ -154,3 +154,35 @@ de referencia completo.
 Spec`) sin implementar ninguna llamada real a Plant 3D. No se debe agregar
 ninguna clase/decorador/API de Plant 3D inventada; esa integracion se
 construira y validara contra documentacion real en una etapa posterior.
+
+## Arquitectura general de biblioteca (V0.2.2)
+
+Todo lo anterior (modelos, geometria, validaciones, exportadores) sigue
+siendo especifico del codo HDPE segmentado. V0.2.2 agrega una capa por
+encima que registra ese codo dentro de un catalogo mas general, sin
+tocar nada de lo anterior:
+
+```
+core/library/          registro: familias de componentes, normas,
+                        materiales, procedencia documental, origen de
+                        parametros — puro dato/definicion, cero geometria
+core/compatibility/     SUPPORTED vs NOT_AVAILABLE_IN_LIBRARY
+data_sources/           metadata de documentos fuente, sin digitalizar
+plant3d/publishers/     contratos abstractos, siempre
+                        PLANT3D_BACKEND_NOT_IMPLEMENTED
+```
+
+`core/library/elbow_registration.py::register_hdpe_segmented_elbow()` es
+el único punto de contacto entre esta capa y el motor existente: recibe
+un `ElbowParameters` y una `SegmentedElbowGeometry` ya construidos, los
+**lee** (nunca los reconstruye ni los modifica) y devuelve un
+`ComponentRegistration` con familia/material/norma/estado de
+cumplimiento/procedencia. `ui/app_streamlit.py` y
+`core/serialization/json_export.py` consumen ese objeto de forma
+puramente aditiva (parametro opcional `registration=None`), igual que ya
+hacían con `geometry=None` en V0.2 — así que ningún consumidor existente
+que no pase ese argumento nota el cambio.
+
+Ver `docs/COMPONENT_LIBRARY.md`, `docs/STANDARDS_ARCHITECTURE.md`,
+`docs/MATERIALS_ARCHITECTURE.md`, `docs/DATA_PROVENANCE.md` y
+`docs/PLANT3D_PUBLISHING_ARCHITECTURE.md` para el detalle de cada pieza.

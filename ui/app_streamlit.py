@@ -29,6 +29,11 @@ from core.geometry.engineering_report import (
 )
 from core.geometry.geometry_validation import GeometryValidationError, validate_segmented_elbow_geometry
 from core.geometry.segmented_elbow import build_segmented_elbow_geometry
+from core.compatibility.engine import check_compatibility
+from core.library.component_family import COMPONENT_FAMILIES
+from core.library.elbow_registration import ComponentRegistration, register_hdpe_segmented_elbow
+from core.library.materials import MATERIALS_REGISTRY
+from core.library.standards import STANDARDS_REGISTRY
 from core.models.common import DataAvailability, EndType
 from core.serialization.json_export import elbow_to_dict
 from core.validation.elbow_validation import Severity, has_blocking_errors
@@ -40,6 +45,7 @@ from core.validation.reference_comparison import (
     has_any_reference_value,
 )
 from data.repository import ElbowRepository
+from data_sources.registry import REGISTERED_SOURCES
 from ui.engineering_view import build_engineering_figure
 from ui.plotly_view import build_elbow_figure
 from ui.plotly_view3d import build_elbow_figure_3d
@@ -61,8 +67,100 @@ def render_notes(notes: list[str], as_error: bool = False) -> None:
             st.info(note)
 
 
+def render_library_header(registration: ComponentRegistration) -> None:
+    standard = registration.standard
+    standard_label = standard.code if standard.organization.value == standard.code else f"{standard.organization.value} {standard.code}"
+    if standard.part:
+        standard_label += f" Parte {standard.part}"
+    material_label = registration.material.grade or registration.material.key
+
+    col1, col2, col3, col4 = st.columns(4)
+    for col, label, value in (
+        (col1, "Categoria", registration.family.category.value.title()),
+        (col2, "Familia", registration.family.display_name),
+        (col3, "Norma", standard_label),
+        (col4, "Material", f"{registration.material.family.value} {material_label}"),
+    ):
+        col.caption(label)
+        col.markdown(f"**{value}**")
+    st.caption(f"Estado de cumplimiento: {registration.compliance_status.value}")
+
+
+def render_available_libraries() -> None:
+    with st.expander("Bibliotecas disponibles / futuras"):
+        st.caption(
+            "Registrar una norma, material o familia aqui no significa que sus tablas ya "
+            "esten cargadas — solo que el nombre existe en la arquitectura. Ver "
+            "docs/STANDARDS_ARCHITECTURE.md y docs/MATERIALS_ARCHITECTURE.md."
+        )
+
+        st.markdown("**Familias de componentes**")
+        st.dataframe(
+            {
+                "Familia": [f.display_name for f in COMPONENT_FAMILIES.values()],
+                "Categoria": [f.category.value for f in COMPONENT_FAMILIES.values()],
+                "Implementada": ["Si" if f.implemented else "No" for f in COMPONENT_FAMILIES.values()],
+            },
+            use_container_width=True, hide_index=True,
+        )
+
+        st.markdown("**Normas**")
+        st.dataframe(
+            {
+                "Norma": [f"{s.organization.value} {s.code}" + (f" Parte {s.part}" if s.part else "") for s in STANDARDS_REGISTRY.values()],
+                "Estado de datos": [s.data_status.value for s in STANDARDS_REGISTRY.values()],
+            },
+            use_container_width=True, hide_index=True,
+        )
+
+        st.markdown("**Materiales**")
+        st.dataframe(
+            {
+                "Material": [m.key for m in MATERIALS_REGISTRY.values()],
+                "Familia": [m.family.value for m in MATERIALS_REGISTRY.values()],
+                "Especificacion / Grado": [
+                    " / ".join(filter(None, [m.specification, m.grade])) or "—" for m in MATERIALS_REGISTRY.values()
+                ],
+            },
+            use_container_width=True, hide_index=True,
+        )
+
+        st.markdown("**Fuentes documentales registradas**")
+        st.dataframe(
+            {
+                "Documento": [s.name for s in REGISTERED_SOURCES],
+                "Tipo": [s.document_type for s in REGISTERED_SOURCES],
+                "Estado": [s.status.value for s in REGISTERED_SOURCES],
+            },
+            use_container_width=True, hide_index=True,
+        )
+
+        compatibility = check_compatibility("HDPE_SEGMENTED_ELBOW", "ASME_B16_9", "PE100")
+        st.markdown("**Ejemplo del motor de compatibilidad**")
+        st.code(
+            "HDPE_SEGMENTED_ELBOW + ASME_B16_9 + PE100\n"
+            f"=> {compatibility.status.value}\n"
+            f"({compatibility.message})",
+            language="text",
+        )
+
+
 def render_component(params, missing_fields, key_prefix: str, extra_notes=None) -> None:
     geometry = build_elbow_geometry(params)
+
+    # Built early (before any display) so the library header and the rest
+    # of the 3D-dependent sections all share one computation.
+    geometry_3d = build_segmented_elbow_geometry(params)
+    try:
+        validate_segmented_elbow_geometry(params, geometry_3d)
+        validation_ok = True
+    except GeometryValidationError as exc:
+        validation_ok = False
+        geometry_validation_failures = exc.failures
+
+    registration = register_hdpe_segmented_elbow(params, geometry_3d if validation_ok else None)
+    render_library_header(registration)
+
     # Port positions/directions/diameters only exist once a coordinate
     # system has been built; fill them in from geometry before the table
     # and JSON export below are rendered, so both reflect real values
@@ -88,14 +186,9 @@ def render_component(params, missing_fields, key_prefix: str, extra_notes=None) 
     st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_chart")
 
     st.subheader("Vista previa 3D (segmentada)")
-    geometry_3d = build_segmented_elbow_geometry(params)
-    try:
-        validate_segmented_elbow_geometry(params, geometry_3d)
-        validation_ok = True
-    except GeometryValidationError as exc:
-        validation_ok = False
+    if not validation_ok:
         st.error("GEOMETRY_VALIDATION_ERROR — no se muestra la geometria 3D ni se incluye en el JSON.")
-        for failure in exc.failures:
+        for failure in geometry_validation_failures:
             st.code(
                 f"{failure.code}: esperado={failure.expected!r} obtenido={failure.found!r} "
                 f"diferencia={failure.difference!r}\n{failure.message}",
@@ -131,7 +224,9 @@ def render_component(params, missing_fields, key_prefix: str, extra_notes=None) 
         render_engineering_validation(params, geometry_3d, title, key_prefix)
 
     st.subheader("Exportar componente (JSON)")
-    component_json = elbow_to_dict(params, geometry=geometry_3d if validation_ok else None)
+    component_json = elbow_to_dict(
+        params, geometry=geometry_3d if validation_ok else None, registration=registration
+    )
     st.json(component_json)
     st.download_button(
         "Descargar JSON",
@@ -441,7 +536,7 @@ def render_custom_tab() -> None:
 
 
 def main() -> None:
-    st.title("Piping Component Generator — V0.2")
+    st.title("Piping Component Generator — V0.2.2")
     st.caption(
         "Codo HDPE segmentado PE100 (DIN 16963), con motor geometrico 3D real "
         "(gajos + planos a inglete). Independiente de AutoCAD Plant 3D."
@@ -460,8 +555,10 @@ def main() -> None:
         st.info(
             "Modo Ingenieria: arquitectura reservada para una version futura "
             "(edicion avanzada por segmento, puertos y propiedades Plant 3D). "
-            "No implementado en V0.1."
+            "No implementado todavia."
         )
+
+    render_available_libraries()
 
 
 if __name__ == "__main__":

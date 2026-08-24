@@ -1,9 +1,11 @@
 """Converts an ElbowParameters into the project's intermediate JSON schema.
 
-Schema version "piping-component-generator/0.2": V0.1's flat parameter
-fields plus (when a SegmentedElbowGeometry is supplied) the 3D gajo/stub
-breakdown. Fields the source data does not provide are omitted rather than
-filled with invented values (see data/repository.py LookupResult).
+Schema version "piping-component-generator/0.3": V0.2's fields plus
+(when a ComponentRegistration is supplied) the component-library metadata
+— family/category/type, standard, material, compliance status and
+provenance (see core/library/elbow_registration.py). Fields the source
+data does not provide are omitted rather than filled with invented values
+(see data/repository.py LookupResult).
 """
 
 from __future__ import annotations
@@ -11,9 +13,10 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from core.geometry.segmented_elbow import ElbowSegment, SegmentedElbowGeometry
+from core.library.elbow_registration import ComponentRegistration
 from core.models.elbow import ElbowParameters
 
-SCHEMA_VERSION = "piping-component-generator/0.2"
+SCHEMA_VERSION = "piping-component-generator/0.3"
 
 
 def _round_vector(vector, ndigits: int = 6):
@@ -45,19 +48,65 @@ def _segment_to_dict(segment: ElbowSegment) -> Dict[str, Any]:
     }
 
 
-def elbow_to_dict(params: ElbowParameters, geometry: Optional[SegmentedElbowGeometry] = None) -> Dict[str, Any]:
+def _registration_to_dict(registration: ComponentRegistration) -> Dict[str, Any]:
+    standard = registration.standard
+    material = registration.material
+    return {
+        "component_family": registration.family.key,
+        "component_category": registration.family.category.value,
+        "component_type": registration.family.type.value,
+        "standard": {
+            "organization": standard.organization.value,
+            "code": standard.code,
+            "part": standard.part,
+            "data_status": standard.data_status.value,
+        },
+        "material": {
+            "family": material.family.value,
+            "grade": material.grade,
+            "specification": material.specification,
+        },
+        "compliance_status": registration.compliance_status.value,
+        "segment_decomposition_status": registration.segment_decomposition_status.value,
+        "source_geometry_status": registration.source_geometry_status,
+        "geometric_relation_status": registration.geometric_relation_status,
+        "provenance": (
+            {
+                "document": registration.provenance.document,
+                "document_revision": registration.provenance.document_revision,
+                "page": registration.provenance.page,
+                "section": registration.provenance.section,
+                "table": registration.provenance.table,
+                "standard_reference": registration.provenance.standard_reference,
+                "source_type": registration.provenance.source_type.value,
+                "notes": registration.provenance.notes,
+            }
+            if registration.provenance
+            else None
+        ),
+    }
+
+
+def elbow_to_dict(
+    params: ElbowParameters,
+    geometry: Optional[SegmentedElbowGeometry] = None,
+    registration: Optional[ComponentRegistration] = None,
+) -> Dict[str, Any]:
     """Builds the JSON-ready dict for one elbow component.
 
     `geometry` is optional (a SegmentedElbowGeometry from
     core/geometry/segmented_elbow.py) and only adds the 3D "segments"
-    (gajo) breakdown and the two straight-leg stubs; every V0.1 field is
-    still produced without it.
+    (gajo) breakdown and the two straight-leg stubs. `registration` is
+    optional (a ComponentRegistration from
+    core/library/elbow_registration.py) and only adds the component-library
+    metadata block. Every V0.1/V0.2 field is still produced without them.
     """
     config = params.segment_configuration
     component: Dict[str, Any] = {
         "type": params.component_type,
         "material": params.material,
         "mode": params.mode.value,
+        "generation_mode": params.mode.value,
         "dn_mm": params.dn_mm,
         "dn_equivalent_in": params.dn_equivalent_in,
         "pn": params.pn,
@@ -91,5 +140,8 @@ def elbow_to_dict(params: ElbowParameters, geometry: Optional[SegmentedElbowGeom
         component["segments"] = [_segment_to_dict(s) for s in geometry.segments] if geometry.segments else []
         component["leg1_stub"] = _segment_to_dict(geometry.leg1_stub)
         component["leg2_stub"] = _segment_to_dict(geometry.leg2_stub)
+
+    if registration is not None:
+        component.update(_registration_to_dict(registration))
 
     return {"schema": SCHEMA_VERSION, "component": component}

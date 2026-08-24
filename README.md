@@ -1,9 +1,16 @@
-# Piping Component Generator — V0.2.1
+# Piping Component Generator — V0.2.2
 
 Generador de componentes parametricos de piping para preparar, en etapas
 futuras, su exportacion a AutoCAD Plant 3D. Esta aplicacion es
-independiente de Plant 3D y cubre por ahora un unico componente:
-**codo HDPE segmentado PE100 (DIN 16963)**.
+independiente de Plant 3D. El unico componente con motor geometrico real
+es el **codo HDPE segmentado PE100 (DIN 16963 Parte 1)**, ahora registrado
+dentro de una arquitectura general de biblioteca (familias de
+componentes, normas, materiales, compatibilidad) preparada para crecer
+sin reescribir lo que ya funciona.
+
+**Golden Case principal (V0.2.2+): DN110 / PN10 / 90°** — ver
+`docs/COMPONENT_LIBRARY.md`. DN315/PN10/90° (principal hasta V0.2.1) se
+mantiene como caso de regresion/escalabilidad.
 
 ## Que hace
 
@@ -40,9 +47,25 @@ independiente de Plant 3D y cubre por ahora un unico componente:
   tolerancias editables ±1/±2/±5 mm, PASS/FAIL y diferencia %) que nunca
   ajusta la geometria automaticamente. Detalle completo en
   `docs/GEOMETRY_VALIDATION_REFERENCE.md`.
-- Exportacion a un JSON intermedio (`piping-component-generator/0.2`) con
-  los puertos P1/P2 y, cuando hay geometria 3D disponible, el desglose de
-  segmentos (`segments`) y los tramos rectos (`leg1_stub`/`leg2_stub`).
+- Exportacion a un JSON intermedio (`piping-component-generator/0.3`) con
+  los puertos P1/P2, el desglose de segmentos, y (V0.2.2) la metadata de
+  biblioteca: familia/categoria/tipo, norma, material, estado de
+  cumplimiento y procedencia documental.
+- **Arquitectura de biblioteca** (V0.2.2, `core/library/`,
+  `core/compatibility/`, `data_sources/`, `plant3d/publishers/`): registra
+  el codo actual como `FITTING/ELBOW/HDPE_SEGMENTED_ELBOW` dentro de una
+  taxonomia general (fitting/valve/support/equipment), un registro de
+  normas (`DIN`, `ISO`, `ASME`, `EN`, `MSS`, `PROJECT_STANDARD`, `CUSTOM`)
+  y materiales (HDPE PE80/PE100, acero al carbono, acero inoxidable,
+  grados ASTM) donde registrar un nombre nunca implica tener sus tablas
+  cargadas, un motor de compatibilidad que distingue `SUPPORTED` de
+  `NOT_AVAILABLE_IN_LIBRARY` (esto ultimo NO significa invalido en
+  ingenieria), y contratos abstractos de publicacion a Plant 3D que
+  siempre devuelven `PLANT3D_BACKEND_NOT_IMPLEMENTED`. Nada de esto
+  modifica el motor geometrico existente. Detalle en
+  `docs/COMPONENT_LIBRARY.md`, `docs/STANDARDS_ARCHITECTURE.md`,
+  `docs/MATERIALS_ARCHITECTURE.md`, `docs/DATA_PROVENANCE.md` y
+  `docs/PLANT3D_PUBLISHING_ARCHITECTURE.md`.
 
 ## Instalacion
 
@@ -86,31 +109,49 @@ piping-component-generator/
         validation/
             elbow_validation.py    # reglas geometricas del Modo B
             reference_comparison.py # V0.2.1: MODELO PARAMETRICO vs MODELO DE REFERENCIA
-        standards/            # alcance normativo DIN 16963
+        library/               # V0.2.2: capa de registro/definicion (NO geometria)
+            provenance.py          # DataProvenance, SourceType
+            standards.py           # StandardDefinition + registro (DIN/ISO/ASME/EN/MSS/...)
+            materials.py           # MaterialDefinition + registro (HDPE, aceros, ASTM...)
+            component_family.py    # ComponentCategory/Type + registro de familias
+            parameter_origin.py    # USER_INPUT | DATABASE_VALUE | RULE_DERIVED | ...
+            elbow_registration.py  # envuelve el codo actual en la libreria general
+            support_family.py      # SupportFamilyDefinition (placeholder, sin geometria)
+        standards/            # alcance normativo DIN 16963 (V0.1, especifico del codo)
         serialization/        # exportacion a JSON intermedio
+    core/compatibility/       # V0.2.2: SUPPORTED vs NOT_AVAILABLE_IN_LIBRARY
     data/
         raw/                  # Excel original, sin modificar
         processed/            # (reservado para snapshots futuros)
         loader.py             # unico modulo que conoce el layout del Excel
         repository.py         # API de consulta (Modo A)
+    data_sources/             # V0.2.2: metadata de fuentes documentales, sin digitalizar
+        hdpe_catalog/
+        codelco_support_standard/
+        hipogeno_support_standard/
     cad/
         backends/              # CadQuery (opcional) para STEP/STL — desacoplado de core/
     plant3d/
-        exporters/            # interfaz abstracta, sin API ficticia de Plant 3D
+        exporters/            # interfaz abstracta, sin API ficticia de Plant 3D (V0.1)
         custom_scripts/       # placeholder para la etapa de integracion futura
-    ui/                       # Streamlit + Plotly (2D, 3D y vista de ingenieria)
+        publishers/            # V0.2.2: CatalogPartPublisher/SupportPublisher/EquipmentPublisher,
+                              # siempre PLANT3D_BACKEND_NOT_IMPLEMENTED
+    ui/                       # Streamlit + Plotly (2D, 3D, vista de ingenieria, cabecera de libreria)
     tests/
-    docs/                     # ARCHITECTURE.md, DATA_NOTES.md, SEGMENTED_ELBOW_GEOMETRY.md,
-                              # GEOMETRY_VALIDATION_REFERENCE.md
+    docs/                     # ver lista completa mas abajo
 ```
 
 Ver `docs/ARCHITECTURE.md` para el detalle del pipeline
 (`DATOS → MODELO → VALIDACIONES → GEOMETRIA → INTERFAZ → EXPORTADORES`),
 `docs/DATA_NOTES.md` para como se interpreta el Excel fuente,
 `docs/SEGMENTED_ELBOW_GEOMETRY.md` para el detalle matematico del motor 3D
-(sistema de coordenadas, formulas, tolerancias), y
+(sistema de coordenadas, formulas, tolerancias),
 `docs/GEOMETRY_VALIDATION_REFERENCE.md` para que es dato/ecuacion/hipotesis
-de modelado y como usar el comparador contra una referencia fisica/CAD.
+de modelado y como usar el comparador contra una referencia fisica/CAD, y
+(V0.2.2) `docs/COMPONENT_LIBRARY.md`, `docs/STANDARDS_ARCHITECTURE.md`,
+`docs/MATERIALS_ARCHITECTURE.md`, `docs/DATA_PROVENANCE.md` y
+`docs/PLANT3D_PUBLISHING_ARCHITECTURE.md` para la arquitectura general de
+biblioteca.
 
 ## Fuente de datos
 
