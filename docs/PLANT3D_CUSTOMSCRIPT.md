@@ -139,3 +139,100 @@ no-determinista. Cubierto por
 
 Hasta que eso ocurra, el estado máximo declarado por este proyecto es
 `PLANT3D_PACKAGE_READY_FOR_VALIDATION` — nunca `PLANT3D_VALIDATED`.
+
+## V0.3.1 — primera evidencia real (AutoCAD Plant 3D 2025)
+
+El punto 4 de arriba dejó de ser teórico: el `.py` de V0.3 (commit
+`1feb598`) se probó en una instalación real de **AutoCAD Plant 3D 2025**
+(Windows, Shared Content en
+`C:\AutoCAD Plant 3D 2025 Content\CPak Common\CustomScripts\`). Evidencia
+completa en `plant3d_validation/registration_result.txt`. Resumen:
+
+| Paso | Resultado real |
+|---|---|
+| `PLANTREGISTERCUSTOMSCRIPTS` | Sin errores en línea de comandos — `REGISTER = PASS` |
+| `(arxload "PnP3dACPAdapter")` | `"PnP3dACPAdapter"` — `ACP_ADAPTER = PASS` |
+| `(testacpscript "HDPE_SEGMENTED_ELBOW")` | `nil`, sin geometría — `TESTACPSCRIPT = NIL` |
+
+**Causa identificada** (real, no hipótesis): el script se llama
+`HDPE_SEGMENTED_ELBOW.py` pero el V0.3 scaffold definía
+`def UNCONFIRMED_PLANT3D_ENTRY_POINT():` como entry point. El lookup de
+formas de Plant 3D exige que el nombre de la rutina coincida con el
+nombre del script — `ENTRY_POINT_MATCH = FAIL`. Esto confirma, con
+evidencia real y no solo con la nota de troubleshooting de la
+comunidad citada abajo, exactamente el riesgo que ya advertía la sección
+"Bug encontrado y corregido durante el desarrollo": el placeholder
+sintácticamente válido no era funcionalmente válido.
+
+**Estado global tras V0.3.1: `PLANT3D_VALIDATION_IN_PROGRESS`** — ni
+`PLANT3D_PACKAGE_READY_FOR_VALIDATION` a secas (ya hay evidencia real
+parcial) ni `PLANT3D_VALIDATED` (todavía no hay geometría real
+confirmada). `plant3d/deployment/manifest.py` refleja esto con
+`current_stage = REGISTERED` (el registro/compilación sí tiene evidencia
+real) y `package_status` todavía en
+`PLANT3D_PACKAGE_READY_FOR_VALIDATION`.
+
+### Fuentes adicionales confirmadas en V0.3.1
+
+Corroboran, con múltiples ejemplos reales independientes, la existencia
+y el patrón de uso de `CYLINDER`, `.rotateY(...)`, `.uniteWith(...)`,
+`s.setPoint(...)`, la convención `def SCRIPT_NAME(s, ..., **kw):`, y el
+comportamiento de `TESTACPSCRIPT`/`PnP3dACPAdapter` (ver
+`plant3d/generators/validation_script_generator.py::SOURCE_CITATIONS`):
+
+- https://blog.autodesk.io/custom-python-scripts-for-autocad-plant-3d-part-2/
+- https://blog.autodesk.io/custom-python-scripts-for-autocad-plant-3d-part-3/
+- https://static.au-uw2-prd.autodesk.com/PD1746_handout_1746_pd1746_20-_20scripting_20components_20for_20autocad_20plant_203d.pdf
+- https://mgfx.co.za/blog/uncategorized/plant-3d-adding-custom-components-part-2-breaking-down-the-code/
+- https://enginine.com/2025/11/11/custom-python-scripts-for-autocad-plant-3d-case-study-of-tubing-fittings-part-1/
+- https://pipingcontent.com/blog/plant3d-python-testacpscript-debugging-loop
+- https://forums.autodesk.com/t5/autocad-plant-3d-forum/testacpscript-unknown-command/td-p/11901666
+
+Como en V0.3, `WebFetch` sigue bloqueado en este sandbox — estas fuentes
+se verificaron por fragmentos de `WebSearch`, no por el contenido
+completo de la página. Un dato concreto (`def TESTSCRIPT2(s, D=80.0,
+L=150.0, OF=-1, **kw):` con `s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0,
+0.0), 0.0)` / `s.setPoint((L, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)`) sí
+apareció citado literalmente en un snippet — ese es el patrón exacto que
+usa `validation_script_generator.py` para el entry point y los puertos.
+`CYLINDER`/`.rotateY(...)`/`.uniteWith(...)` están confirmados como
+existentes y usados en ese patrón (construir → transformar → unir booleano)
+en múltiples scripts reales independientes, pero **ningún snippet
+disponible citó literalmente el orden de argumentos del constructor de
+`CYLINDER`** — por eso `validation_script_generator.py` lo marca
+explícitamente como reconstrucción best-effort, no como cita verificada,
+y evita `.rotateY(...)`/`.uniteWith(...)` hasta tener evidencia real de
+su semántica de posicionamiento.
+
+### V0.3.1A — script mínimo de validación (no es el codo)
+
+`plant3d/generators/validation_script_generator.py` reemplaza el entry
+point roto por uno mínimo y correctamente nombrado:
+
+```python
+def HDPE_SEGMENTED_ELBOW(s, OD=110.0, THK=6.6, R=165.0, LE=150.0, Z=315.0, **kw):
+    tramo = CYLINDER(OD, LE)
+    s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)
+    s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)
+```
+
+Explícitamente marcado `VALIDATION_GEOMETRY_ONLY` — un solo tramo recto,
+NO el codo segmentado DIN 16963. Su único propósito es confirmar, en
+Plant 3D 2025 real, que `SCRIPT EXECUTION`, `GEOMETRY API`
+(`CYLINDER(...)`) y `PORT API` (`s.setPoint(...)`) funcionan de extremo a
+extremo antes de intentar la geometría segmentada real (V0.3.1B). No usa
+`.rotateY(...)` ni `.uniteWith(...)` todavía — deliberadamente diferido
+hasta confirmar su semántica de posicionamiento con evidencia real.
+Generador cubierto por `tests/test_plant3d_validation_script.py`
+(validez `ast.parse()`, determinismo, nombre de entry point, patrón de
+puertos, ausencia de `.pcat`/`.pspx`/`.pspc`).
+
+### Siguiente paso
+
+Probar V0.3.1A en el mismo entorno (Plant 3D 2025) y registrar el
+resultado real en una nueva entrada de
+`plant3d_validation/registration_result.txt`. Solo si
+`(testacpscript "HDPE_SEGMENTED_ELBOW")` produce un objeto visible se
+avanza a V0.3.1B (geometría real del codo DN110/PN10/90°, con los cuatro
+gajos 15°-30°-30°-15° y el mapeo P1/P2 real vía
+`plant3d/generators/port_mapping.py`).

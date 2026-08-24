@@ -1,29 +1,32 @@
-"""HDPE_SEGMENTED_ELBOW.py — generado por Piping Component Generator (V0.3 Proof of Concept)
+"""HDPE_SEGMENTED_ELBOW.py — V0.3.1A: VALIDATION_GEOMETRY_ONLY, NOT the codo DIN 16963.
 
-ESTADO: SCAFFOLD — NOT_VERIFIED_AGAINST_REAL_PLANT3D_API
-No ejecutar PLANTREGISTERCUSTOMSCRIPTS contra este archivo esperando que
-compile: la seccion de geometria/puertos deliberadamente NO contiene
-llamadas reales a la API de Plant 3D (ver docs/PLANT3D_CUSTOMSCRIPT.md
-para por que, y que falta).
+Fixes the V0.3 scaffold's entry-point bug found on real AutoCAD Plant 3D
+2025 hardware (see plant3d_validation/registration_result.txt):
+PLANTREGISTERCUSTOMSCRIPTS and the PnP3dACPAdapter both loaded without
+error, but (testacpscript "HDPE_SEGMENTED_ELBOW") returned NIL and produced no
+geometry, because the routine was named UNCONFIRMED_PLANT3D_ENTRY_POINT
+instead of HDPE_SEGMENTED_ELBOW. Plant 3D's shape lookup requires the routine
+name to match the script name.
 
-Componente: Codo HDPE segmentado (HDPE_SEGMENTED_ELBOW)
-Norma: DIN 16963 Parte 1
-Material: HDPE PE100
-Estado de cumplimiento: SOURCE_DATA
-Caso: DN110 PN10 90 grados
+This version's ONLY job is to confirm SCRIPT EXECUTION, GEOMETRY API and
+PORT API on the real install: ONE straight cylinder, two ports. It is
+NOT dimensionally meaningful as a codo yet — see
+docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1, for the real evidence and
+sources behind every call below, and for what V0.3.1B still needs.
 """
 
 # ---------------------------------------------------------------------------
-# Metadata verificada contra documentacion publica de Autodesk (fragmentos
-# citados textualmente durante la investigacion de V0.3):
-#   - https://help.autodesk.com/view/PLNT3D/2023/ENU/?guid=GUID-D86E0252-5123-41DA-8B72-202AD8D48558
+# Metadata: same decorators/imports confirmed for V0.3 (see
+# docs/PLANT3D_CUSTOMSCRIPT.md), plus the additional sources below that
+# corroborate CYLINDER / setPoint / the entry-point-matches-script-name
+# rule / TESTACPSCRIPT behavior used in this V0.3.1A fixture:
 #   - https://blog.autodesk.io/custom-python-scripts-for-autocad-plant-3d-part-2/
 #   - https://blog.autodesk.io/custom-python-scripts-for-autocad-plant-3d-part-3/
 #   - https://static.au-uw2-prd.autodesk.com/PD1746_handout_1746_pd1746_20-_20scripting_20components_20for_20autocad_20plant_203d.pdf
-# Los nombres de import, los decoradores @activate/@group/@param y los
-# argumentos Group/TooltipShort/TooltipLong/LengthUnit/Ports/FirstPortEndtypes
-# provienen de esas fuentes. Todo lo demas en este archivo es un
-# marcador explicito, no una llamada real.
+#   - https://mgfx.co.za/blog/uncategorized/plant-3d-adding-custom-components-part-2-breaking-down-the-code/
+#   - https://enginine.com/2025/11/11/custom-python-scripts-for-autocad-plant-3d-case-study-of-tubing-fittings-part-1/
+#   - https://pipingcontent.com/blog/plant3d-python-testacpscript-debugging-loop
+#   - https://forums.autodesk.com/t5/autocad-plant-3d-forum/testacpscript-unknown-command/td-p/11901666
 # ---------------------------------------------------------------------------
 from aqa.math import *
 from varmain.primitiv import *
@@ -32,98 +35,34 @@ from varmain.custom import *
 
 @activate(
     Group="Fitting",
-    TooltipShort="Codo HDPE segmentado",
-    TooltipLong="Codo HDPE segmentado (DIN 16963 Parte 1). Generado por Piping Component Generator.",
+    TooltipShort="VALIDATION_GEOMETRY_ONLY (V0.3.1A) - not the codo yet",
+    TooltipLong="V0.3.1A: un solo tramo recto, usado solo para validar SCRIPT/GEOMETRY/PORT API en Plant 3D 2025 real. No representa el codo DIN 16963.",
     LengthUnit="mm",
     Ports=2,
 )
 @group("MainDimensions")
 @param(OD=LENGTH, TooltipShort="Diametro exterior", TooltipLong="OD (mm) - Golden Case: 110")
-@param(THK=LENGTH, TooltipShort="Espesor de pared", TooltipLong="Espesor (mm) - Golden Case: 6.6")
-@param(R=LENGTH, TooltipShort="Radio de curvatura", TooltipLong="R (mm) - Golden Case: 165")
-@param(LE=LENGTH, TooltipShort="Longitud tangente", TooltipLong="Le (mm) - Golden Case: 150")
-@param(Z=LENGTH, TooltipShort="Distancia vertice-cara", TooltipLong="Z = Le + R*tan(angulo/2) (mm) - Golden Case: 315")
-# ANGLE_DEG: ningun tipo de parametro Plant 3D para angulos fue confirmado
-# en esta investigacion (solo LENGTH quedo evidenciado). NO se inventa un
-# tipo — se deja como TODO explicito.
-# @param(ANGLE_DEG=<TIPO_NO_CONFIRMADO>, TooltipShort="Angulo del codo")  # TODO
-def UNCONFIRMED_PLANT3D_ENTRY_POINT():
-    """Placeholder only — NOT sourced.
+@param(THK=LENGTH, TooltipShort="Espesor de pared (no usado en V0.3.1A)", TooltipLong="Espesor (mm) - reservado para V0.3.1B")
+@param(R=LENGTH, TooltipShort="Radio de curvatura (no usado en V0.3.1A)", TooltipLong="R (mm) - reservado para V0.3.1B")
+@param(LE=LENGTH, TooltipShort="Longitud del tramo de prueba", TooltipLong="Le (mm) - Golden Case: 150")
+@param(Z=LENGTH, TooltipShort="Distancia vertice-cara (no usado en V0.3.1A)", TooltipLong="Z (mm) - reservado para V0.3.1B")
+def HDPE_SEGMENTED_ELBOW(s, OD=110.0, THK=6.6, R=165.0, LE=150.0, Z=315.0, **kw):
+    """VALIDATION_GEOMETRY_ONLY -- un solo tramo recto (CYLINDER), NO el codo DIN 16963.
 
-    Python decorators must wrap a function or class, so the @activate /
-    @group / @param stack above (which IS sourced, see SOURCE_CITATIONS)
-    needs a target to stay syntactically valid. This function's NAME and
-    BODY are not from any real Plant 3D script this project has seen —
-    only the decorators above it are. Replace this whole function once
-    the real entry point signature is confirmed on an actual Plant 3D
-    installation.
+    THK/R/Z se reciben (mismos nombres/defaults del Golden Case
+    DN110/PN10/90) pero todavia no se usan: esta version solo prueba que
+    CYLINDER(...) + s.setPoint(...) funcionan en un Plant 3D 2025 real.
+    Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
     """
-    raise NotImplementedError(
-        "NOT_VERIFIED_AGAINST_REAL_PLANT3D_API: geometry/port placement "
-        "calls belong here once confirmed against a real installation."
-    )
+    # HONESTY NOTE: (OD, LE) como orden de argumentos de CYLINDER es una
+    # reconstruccion best-effort a partir de multiples ejemplos reales
+    # independientes (ver SOURCE_CITATIONS arriba), NO una firma citada
+    # literalmente. Si esto falla o dibuja algo incorrecto en el
+    # entorno real, eso ES evidencia nueva a reportar.
+    tramo = CYLINDER(OD, LE)
 
-
-# ---------------------------------------------------------------------------
-# Datos de referencia (Golden Case) — estructuras de datos planas, NO son
-# llamadas a la API de Plant 3D. Sirven para que quien complete este
-# script (con acceso real al SDK) tenga los valores exactos ya validados
-# por el motor geometrico de Piping Component Generator, sin tener que
-# recalcular nada.
-# ---------------------------------------------------------------------------
-GOLDEN_CASE_PARAMETERS = {
-    "od_mm": 110,
-    "thickness_mm": 6.6,
-    "inside_diameter_mm": 96.8,
-    "radius_mm": 165.0,
-    "le_mm": 150.0,
-    "z_mm": 315.0,
-    "angle_deg": 90.0,
-    "segment_angles_deg": [15.0, 30.0, 30.0, 15.0],
-}
-
-GOLDEN_CASE_PORTS = [
-    {
-        "plant_port_index": 1,
-        "source_port_id": "P1",
-        "position_mm": [-315, 3.85764e-14, 0],
-        "direction": [-1, 1.22465e-16, 0],
-        "nominal_diameter_mm": 110,
-        "outside_diameter_mm": 110,
-        "source_end_type": "BUTT_FUSION",
-        "plant_end_type": "REQUIRES_PLANT_CONFIGURATION",
-        "plant_end_type_confirmed": False,
-    },
-    {
-        "plant_port_index": 2,
-        "source_port_id": "P2",
-        "position_mm": [1.92882e-14, 315, 0],
-        "direction": [6.12323e-17, 1, 0],
-        "nominal_diameter_mm": 110,
-        "outside_diameter_mm": 110,
-        "source_end_type": "BUTT_FUSION",
-        "plant_end_type": "REQUIRES_PLANT_CONFIGURATION",
-        "plant_end_type_confirmed": False,
-    },
-]
-
-
-# ---------------------------------------------------------------------------
-# GEOMETRIA Y PUERTOS — NOT_VERIFIED_AGAINST_REAL_PLANT3D_API
-#
-# TODO (requiere inspeccionar varmain.primitiv / varmain.custom reales en
-# una instalacion de Plant 3D — ver docs/PLANT3D_CUSTOMSCRIPT.md):
-#   1. Construir el solido usando GOLDEN_CASE_PARAMETERS (o los valores
-#      @param recibidos en vivo): 2 tramos rectos (Le) + los gajos a
-#      inglete de core/geometry/segmented_elbow.py. NO reescribir esta
-#      geometria aqui — si esta funcion necesita los puntos/planos
-#      exactos, deben pasarse desde
-#      plant3d/generators/custom_script_generator.py, no recalcularse.
-#   2. Colocar los puertos 1..2 de GOLDEN_CASE_PORTS en su
-#      position_mm/direction. La llamada real de Plant 3D para esto (un
-#      hilo del foro de Autodesk menciona "setPoint") no fue confirmada.
-#   3. Asignar el EndType real de cada puerto una vez confirmado un
-#      codigo de extremo para termofusion HDPE via PLANTENDCODES en una
-#      instalacion real — mientras tanto queda como
-#      "REQUIRES_PLANT_CONFIGURATION" (ver GOLDEN_CASE_PORTS arriba).
-# ---------------------------------------------------------------------------
+    # Puertos: esta forma exacta de llamada (posicion, direccion, 0.0) es
+    # una coincidencia cercana con un ejemplo real citado literalmente
+    # (TESTSCRIPT2) -- ver SOURCE_CITATIONS arriba.
+    s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)
+    s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)

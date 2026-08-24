@@ -1,7 +1,7 @@
 {
   "component_family": "HDPE_SEGMENTED_ELBOW",
   "golden_case_label": "DN110 PN10 90 grados",
-  "current_stage": "GENERATED",
+  "current_stage": "REGISTERED",
   "package_status": "PLANT3D_PACKAGE_READY_FOR_VALIDATION",
   "evidence_files": {
     "GENERATED": null,
@@ -12,6 +12,8 @@
   },
   "notes": [
     "Generado sin una instalacion de Plant 3D disponible (ver docs/PLANT3D_ENVIRONMENT.md).",
-    "current_stage solo avanza cuando existe evidencia real registrada en plant3d_validation/."
+    "current_stage solo avanza cuando existe evidencia real registrada en plant3d_validation/.",
+    "V0.3.1A (2026-08-24): REGISTER=PASS, ACP_ADAPTER=PASS, TESTACPSCRIPT=NIL, ENTRY_POINT_MATCH=FAIL en el scaffold V0.3 (commit 1feb598) -- ver plant3d_validation/registration_result.txt. Causa: la rutina no se llamaba igual que el script. HDPE_SEGMENTED_ELBOW.py fue corregido a V0.3.1A (VALIDATION_GEOMETRY_ONLY, un solo CYLINDER + 2 puertos) y esta pendiente de una nueva prueba real.",
+    "Estado narrativo actual: PLANT3D_VALIDATION_IN_PROGRESS. NO se declara PLANT3D_VALIDATED."
   ]
 }

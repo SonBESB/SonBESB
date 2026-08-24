@@ -111,17 +111,37 @@ def test_write_manifest_produces_valid_json(tmp_path):
 # --- shipped evidence placeholders (repo-state guard) --------------------
 
 
-def test_shipped_plant3d_validation_evidence_files_are_still_empty():
-    """Guards against accidentally committing fake evidence: these ship
-    as literal 0-byte placeholders until a human runs the real manual
-    test on a Plant 3D machine."""
+def test_shipped_plant3d_validation_evidence_files_not_yet_reached_are_empty():
+    """Guards against accidentally committing fake evidence: stages not
+    yet reached by a real manual test ship as literal 0-byte
+    placeholders. registration_result.txt is excluded here — as of
+    V0.3.1 it holds real evidence from an actual Plant 3D 2025 test (see
+    test below)."""
     from pathlib import Path
 
     evidence_dir = Path(__file__).resolve().parent.parent / "plant3d_validation"
-    for name in ("registration_result.txt", "catalog_result.md", "spec_result.md", "model_result.md"):
+    for name in ("catalog_result.md", "spec_result.md", "model_result.md"):
         path = evidence_dir / name
         assert path.is_file(), f"missing placeholder: {path}"
         assert path.stat().st_size == 0, f"{path} must ship empty (0 bytes), found real content"
+
+
+def test_shipped_registration_result_holds_real_v031_evidence():
+    """registration_result.txt was filled with real evidence from an
+    actual AutoCAD Plant 3D 2025 test (V0.3.1): registration/compile
+    passed, but TESTACPSCRIPT returned NIL due to an entry-point name
+    mismatch. Guards against this real evidence being silently reverted
+    to an empty placeholder or overwritten with different claims."""
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent.parent / "plant3d_validation" / "registration_result.txt"
+    assert path.is_file()
+    content = path.read_text(encoding="utf-8")
+    assert content.strip() != ""
+    assert "REGISTER" in content and "PASS" in content
+    assert "TESTACPSCRIPT" in content and "NIL" in content
+    assert "ENTRY_POINT_MATCH" in content and "FAIL" in content
+    assert "PLANT3D_VALIDATED" not in content.replace("NO PLANT3D_VALIDATED", "")
 
 
 # --- package builder ------------------------------------------------------

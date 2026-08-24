@@ -1,0 +1,74 @@
+AutoCAD Plant 3D 2025 — resultado real de registro (V0.3 scaffold)
+===================================================================
+
+Entorno probado:
+  - AutoCAD Plant 3D 2025
+  - Windows
+  - Shared Content: C:\AutoCAD Plant 3D 2025 Content\CPak Common\CustomScripts\
+
+Version del script probada: V0.3 (HDPE_SEGMENTED_ELBOW.py con entry
+point UNCONFIRMED_PLANT3D_ENTRY_POINT, commit 1feb598).
+
+--- Pasos ejecutados y resultado real ---
+
+1. HDPE_SEGMENTED_ELBOW.py fue copiado a CustomScripts.
+
+2. Se ejecuto PLANTREGISTERCUSTOMSCRIPTS.
+   Resultado: sin errores en la linea de comandos.
+   REGISTER = PASS
+
+3. Se ejecuto (arxload "PnP3dACPAdapter").
+   Resultado: "PnP3dACPAdapter"
+   ACP_ADAPTER = PASS
+
+4. Se ejecuto (testacpscript "HDPE_SEGMENTED_ELBOW").
+   Resultado: nil -- no se genero geometria.
+   TESTACPSCRIPT = NIL
+
+   Nota del usuario: el mensaje "Invalid 2D point" visto despues de este
+   paso NO provino del script -- habia quedado activo el comando
+   _pasteclip de AutoCAD esperando un punto de insercion (ruido de la
+   sesion, no un error del script).
+
+--- Causa identificada ---
+
+El archivo se llama HDPE_SEGMENTED_ELBOW.py pero el V0.3 scaffold
+definia como entry point:
+
+    def UNCONFIRMED_PLANT3D_ENTRY_POINT():
+
+en vez de una rutina llamada HDPE_SEGMENTED_ELBOW. El lookup de formas
+de Plant 3D requiere que el nombre de la rutina coincida con el nombre
+del script -- confirmado de forma independiente por las notas de la
+comunidad sobre troubleshooting de TESTACPSCRIPT ("si el comando
+devuelve NIL, el nombre de script especificado puede no coincidir
+exactamente con la clase/rutina Python") y por un ejemplo real citado
+literalmente (TESTSCRIPT2) que sigue esa misma convencion. Ver
+docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1, para las fuentes completas.
+
+ENTRY_POINT_MATCH = FAIL
+
+--- Resumen ---
+
+REGISTER          = PASS
+ACP_ADAPTER       = PASS
+TESTACPSCRIPT     = NIL
+ENTRY_POINT_MATCH = FAIL
+
+--- Estado global ---
+
+PLANT3D_VALIDATION_IN_PROGRESS -- NO PLANT3D_VALIDATED.
+
+Este resultado es evidencia real parcial: confirma que el registro/
+compilacion del script (PLANTREGISTERCUSTOMSCRIPTS) y el adaptador ACP
+funcionan en este entorno, pero NO confirma que el script produzca
+geometria -- eso sigue pendiente.
+
+--- Siguiente paso ---
+
+Probar V0.3.1A (entry point corregido: def HDPE_SEGMENTED_ELBOW(s, OD=...),
+geometria minima VALIDATION_GEOMETRY_ONLY con un solo CYLINDER y dos
+puertos via s.setPoint(...)) contra este mismo entorno, ejecutando de
+nuevo PLANTREGISTERCUSTOMSCRIPTS y luego
+(testacpscript "HDPE_SEGMENTED_ELBOW"). Registrar el resultado real en
+una nueva entrada fechada a continuacion de esta, sin sobrescribirla.
