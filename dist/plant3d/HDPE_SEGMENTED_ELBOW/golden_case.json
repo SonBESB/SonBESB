@@ -1,0 +1,227 @@
+{
+  "schema": "piping-component-generator/0.3",
+  "component": {
+    "type": "HDPE_SEGMENTED_ELBOW",
+    "material": {
+      "family": "HDPE",
+      "grade": "PE100",
+      "specification": null
+    },
+    "mode": "NORMALIZED",
+    "generation_mode": "NORMALIZED",
+    "dn_mm": 110,
+    "dn_equivalent_in": "4\"",
+    "pn": "PN10",
+    "sdr": 17.0,
+    "od_mm": 110,
+    "thickness_mm": 6.6,
+    "id_mm": 96.8,
+    "angle_deg": 90.0,
+    "radius_mm": 165.0,
+    "le_mm": 150.0,
+    "z_mm": 315.0,
+    "end_type": "BUTT_FUSION",
+    "segment_configuration": {
+      "total_angle_deg": 90.0,
+      "is_itemized": true,
+      "segment_angles_deg": [
+        15.0,
+        30.0,
+        30.0,
+        15.0
+      ],
+      "source_text": "15° - 30° - 30° - 15°"
+    },
+    "din16963_compliant": true,
+    "notes": [],
+    "ports": [
+      {
+        "id": "P1",
+        "position_mm": [
+          -315.0,
+          0.0,
+          0.0
+        ],
+        "direction": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "nominal_diameter_mm": 110,
+        "outside_diameter_mm": 110,
+        "end_type": "BUTT_FUSION",
+        "orientation_deg": null
+      },
+      {
+        "id": "P2",
+        "position_mm": [
+          0.0,
+          315.0,
+          0.0
+        ],
+        "direction": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "nominal_diameter_mm": 110,
+        "outside_diameter_mm": 110,
+        "end_type": "BUTT_FUSION",
+        "orientation_deg": null
+      }
+    ],
+    "segments_available": true,
+    "segments_unavailable_reason": null,
+    "segments": [
+      {
+        "index": 1,
+        "label": "Gajo 1",
+        "angle_deg": 15.0,
+        "cumulative_angle_deg": 15.0,
+        "start_point_mm": [
+          -165.0,
+          0.0,
+          0.0
+        ],
+        "end_point_mm": [
+          -122.294858,
+          5.622239,
+          0.0
+        ],
+        "direction": [
+          0.991445,
+          0.130526,
+          0.0
+        ]
+      },
+      {
+        "index": 2,
+        "label": "Gajo 2",
+        "angle_deg": 30.0,
+        "cumulative_angle_deg": 45.0,
+        "start_point_mm": [
+          -122.294858,
+          5.622239,
+          0.0
+        ],
+        "end_point_mm": [
+          -48.327381,
+          48.327381,
+          0.0
+        ],
+        "direction": [
+          0.866025,
+          0.5,
+          0.0
+        ]
+      },
+      {
+        "index": 3,
+        "label": "Gajo 3",
+        "angle_deg": 30.0,
+        "cumulative_angle_deg": 75.0,
+        "start_point_mm": [
+          -48.327381,
+          48.327381,
+          0.0
+        ],
+        "end_point_mm": [
+          -5.622239,
+          122.294858,
+          0.0
+        ],
+        "direction": [
+          0.5,
+          0.866025,
+          0.0
+        ]
+      },
+      {
+        "index": 4,
+        "label": "Gajo 4",
+        "angle_deg": 15.0,
+        "cumulative_angle_deg": 90.0,
+        "start_point_mm": [
+          -5.622239,
+          122.294858,
+          0.0
+        ],
+        "end_point_mm": [
+          0.0,
+          165.0,
+          0.0
+        ],
+        "direction": [
+          0.130526,
+          0.991445,
+          0.0
+        ]
+      }
+    ],
+    "leg1_stub": {
+      "index": 0,
+      "label": "Tramo recto Le (lado P1)",
+      "angle_deg": 0.0,
+      "cumulative_angle_deg": 0.0,
+      "start_point_mm": [
+        -315.0,
+        0.0,
+        0.0
+      ],
+      "end_point_mm": [
+        -165.0,
+        0.0,
+        0.0
+      ],
+      "direction": [
+        1.0,
+        0.0,
+        0.0
+      ]
+    },
+    "leg2_stub": {
+      "index": 5,
+      "label": "Tramo recto Le (lado P2)",
+      "angle_deg": 0.0,
+      "cumulative_angle_deg": 90.0,
+      "start_point_mm": [
+        0.0,
+        165.0,
+        0.0
+      ],
+      "end_point_mm": [
+        0.0,
+        315.0,
+        0.0
+      ],
+      "direction": [
+        0.0,
+        1.0,
+        0.0
+      ]
+    },
+    "component_family": "HDPE_SEGMENTED_ELBOW",
+    "component_category": "FITTING",
+    "component_type": "ELBOW",
+    "standard": {
+      "organization": "DIN",
+      "code": "16963",
+      "part": "1",
+      "data_status": "SOURCE_DATA"
+    },
+    "compliance_status": "SOURCE_DATA",
+    "segment_decomposition_status": "SEGMENT_DECOMPOSITION_DEFINED",
+    "source_geometry_status": "SOURCE_GEOMETRY_AVAILABLE",
+    "geometric_relation_status": "GEOMETRIC_RELATION_VERIFIED_AGAINST_SOURCE_DATA",
+    "provenance": {
+      "document": "Catalogo HDPE 2(1).pdf",
+      "document_revision": null,
+      "page": null,
+      "section": "6.1",
+      "table": "6.1.1",
+      "standard_reference": "DIN 16963 Part 1",
+      "source_type": "MANUFACTURER_CATALOG",
+      "notes": "Codos segmentados para soldadura por termofusion. Tabla tambien cruzada contra BD_Codos/BD_PN del Excel derivado del catalogo (ver docs/DATA_NOTES.md)."
+    }
+  }
+}

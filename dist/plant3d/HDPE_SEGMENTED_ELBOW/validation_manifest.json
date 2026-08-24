@@ -1,0 +1,17 @@
+{
+  "component_family": "HDPE_SEGMENTED_ELBOW",
+  "golden_case_label": "DN110 PN10 90 grados",
+  "current_stage": "GENERATED",
+  "package_status": "PLANT3D_PACKAGE_READY_FOR_VALIDATION",
+  "evidence_files": {
+    "GENERATED": null,
+    "REGISTERED": "plant3d_validation/registration_result.txt",
+    "CATALOG_AVAILABLE": "plant3d_validation/catalog_result.md",
+    "SPEC_AVAILABLE": "plant3d_validation/spec_result.md",
+    "MODEL_VALIDATED": "plant3d_validation/model_result.md"
+  },
+  "notes": [
+    "Generado sin una instalacion de Plant 3D disponible (ver docs/PLANT3D_ENVIRONMENT.md).",
+    "current_stage solo avanza cuando existe evidencia real registrada en plant3d_validation/."
+  ]
+}

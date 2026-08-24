@@ -1,0 +1,16 @@
+# Copy to plant3d_config.yaml (repo root) on a machine with AutoCAD
+# Plant 3D actually installed, and fill in the real paths from that
+# installation. Never required — plant3d/environment/detector.py falls
+# back to probing common install locations when this file is absent.
+#
+# See docs/PLANT3D_ENVIRONMENT.md for where each path comes from.
+
+plant3d:
+  version: 2026
+  shared_content: "C:\\AutoCAD Plant 3D 2026 Content"
+  # Optional overrides — if omitted, derived from shared_content as
+  # <shared_content>\CPak Common\CustomScripts, \Catalogs, \Specs, \SDK.
+  custom_scripts: "C:\\AutoCAD Plant 3D 2026 Content\\CPak Common\\CustomScripts"
+  catalogs: "C:\\AutoCAD Plant 3D 2026 Content\\Catalogs"
+  specs: "C:\\AutoCAD Plant 3D 2026 Content\\Specs"
+  sdk: "C:\\AutoCAD Plant 3D 2026 Content\\SDK"

@@ -1,4 +1,4 @@
-# Piping Component Generator — V0.2.2
+# Piping Component Generator — V0.3
 
 Generador de componentes parametricos de piping para preparar, en etapas
 futuras, su exportacion a AutoCAD Plant 3D. Esta aplicacion es
@@ -66,6 +66,26 @@ mantiene como caso de regresion/escalabilidad.
   `docs/COMPONENT_LIBRARY.md`, `docs/STANDARDS_ARCHITECTURE.md`,
   `docs/MATERIALS_ARCHITECTURE.md`, `docs/DATA_PROVENANCE.md` y
   `docs/PLANT3D_PUBLISHING_ARCHITECTURE.md`.
+- **Plant 3D CustomScript — Proof of Concept (V0.3, `plant3d/`)**: primera
+  integracion real (no un contrato abstracto) con AutoCAD Plant 3D, con la
+  regla NO INVENTAR API DE PLANT 3D aplicada estrictamente: cada
+  decorador/import del `.py` generado viene de documentacion publica
+  citada de Autodesk (ver `docs/PLANT3D_CUSTOMSCRIPT.md`); lo que no pudo
+  confirmarse (geometria/puertos reales, codigo de EndType para
+  termofusion HDPE) queda como marcador explicito
+  `NOT_VERIFIED_AGAINST_REAL_PLANT3D_API` / `REQUIRES_PLANT_CONFIGURATION`,
+  nunca inventado. Incluye deteccion de entorno Plant 3D (honesta:
+  `NOT DETECTED` en este sandbox Linux, ver `docs/PLANT3D_ENVIRONMENT.md`),
+  mapeo P1/P2 (`plant3d/generators/port_mapping.py`), un paquete de
+  despliegue completo en `dist/plant3d/HDPE_SEGMENTED_ELBOW/` (script +
+  README + golden_case.json + validation_manifest.json), una carpeta de
+  evidencia `plant3d_validation/` cuyo estado solo avanza con archivos
+  reales no vacios, y una seccion "Plant 3D" en la UI con el boton
+  "Generar paquete Plant 3D" (deliberadamente sin ningun boton de
+  publicacion automatica). El estado maximo declarado es
+  **`PLANT3D_PACKAGE_READY_FOR_VALIDATION`** — nunca `PLANT3D_VALIDATED`
+  sin una prueba real en una maquina Windows con Plant 3D instalado (ver
+  `docs/PLANT3D_MODEL_ACCEPTANCE.md`).
 
 ## Instalacion
 
@@ -136,7 +156,16 @@ piping-component-generator/
         custom_scripts/       # placeholder para la etapa de integracion futura
         publishers/            # V0.2.2: CatalogPartPublisher/SupportPublisher/EquipmentPublisher,
                               # siempre PLANT3D_BACKEND_NOT_IMPLEMENTED
-    ui/                       # Streamlit + Plotly (2D, 3D, vista de ingenieria, cabecera de libreria)
+        environment/           # V0.3: deteccion/config del entorno Plant 3D (nunca hardcodea 1 ruta)
+        generators/            # V0.3: custom_script_generator.py + port_mapping.py (P1/P2)
+        deployment/            # V0.3: manifest.py (estado evidenciado) + package_builder.py
+        catalog/               # V0.3: payload propio + exportador Excel REFERENCE_TEMPLATE_REQUIRED
+        templates/reference/   # V0.3: espera un Excel real exportado por Catalog Builder (vacio hoy)
+    plant3d_validation/        # V0.3: evidencia real por etapa (vacia/plantilla hasta prueba manual)
+    dist/plant3d/               # V0.3: paquete de despliegue generado para el Golden Case
+        HDPE_SEGMENTED_ELBOW/
+    ui/                       # Streamlit + Plotly (2D, 3D, vista de ingenieria, cabecera de libreria,
+                              # seccion Plant 3D)
     tests/
     docs/                     # ver lista completa mas abajo
 ```
@@ -151,7 +180,11 @@ de modelado y como usar el comparador contra una referencia fisica/CAD, y
 (V0.2.2) `docs/COMPONENT_LIBRARY.md`, `docs/STANDARDS_ARCHITECTURE.md`,
 `docs/MATERIALS_ARCHITECTURE.md`, `docs/DATA_PROVENANCE.md` y
 `docs/PLANT3D_PUBLISHING_ARCHITECTURE.md` para la arquitectura general de
-biblioteca.
+biblioteca. Para el Proof of Concept de Plant 3D (V0.3): `docs/PLANT3D_CUSTOMSCRIPT.md`
+(que esta sourced vs. que es un marcador), `docs/PLANT3D_ENVIRONMENT.md`
+(deteccion de entorno), y los cuatro checklists manuales
+`docs/PLANT3D_REGISTRATION_TEST.md`, `docs/PLANT3D_CATALOG_WORKFLOW.md`,
+`docs/PLANT3D_SPEC_TEST.md` y `docs/PLANT3D_MODEL_ACCEPTANCE.md`.
 
 ## Fuente de datos
 
@@ -164,8 +197,12 @@ encabezados esperados) o ajusta el loader si cambia el layout.
 ## Proximos pasos
 
 - Modo C (Ingenieria) con edicion avanzada por segmento/puerto.
-- Generacion real de CustomScripts Python para AutoCAD Plant 3D
-  (`plant3d/`), validada contra documentacion real de Plant 3D — no
-  implementada todavia.
+- Probar el paquete `dist/plant3d/HDPE_SEGMENTED_ELBOW/` en una maquina
+  Windows real con AutoCAD Plant 3D instalado (ver
+  `docs/PLANT3D_REGISTRATION_TEST.md` y los checklists siguientes) —
+  hasta entonces el estado sigue en `PLANT3D_PACKAGE_READY_FOR_VALIDATION`.
+- Completar la seccion de geometria/puertos del CustomScript con la API
+  real de Plant 3D una vez confirmada contra una instalacion real (ver
+  `docs/PLANT3D_CUSTOMSCRIPT.md`).
 - Otros tipos de componente (tees, reductores, flanges, valvulas,
   soportes, bombas).

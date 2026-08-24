@@ -6,3 +6,4 @@ venv/
 .streamlit/
 data/processed/*.json
 !data/processed/.gitkeep
+plant3d_config.yaml

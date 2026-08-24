@@ -8,6 +8,7 @@ never computes geometry or reads the Excel file directly.
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -46,6 +47,9 @@ from core.validation.reference_comparison import (
 )
 from data.repository import ElbowRepository
 from data_sources.registry import REGISTERED_SOURCES
+from plant3d.deployment.package_builder import build_deployment_package
+from plant3d.environment.detector import detect_plant3d_environment
+from plant3d.generators.custom_script_generator import generate_custom_script
 from ui.engineering_view import build_engineering_figure
 from ui.plotly_view import build_elbow_figure
 from ui.plotly_view3d import build_elbow_figure_3d
@@ -535,8 +539,101 @@ def render_custom_tab() -> None:
     render_component(params, missing_fields=[], key_prefix="custom")
 
 
+def render_plant3d_section(repository: ElbowRepository) -> None:
+    st.header("Plant 3D")
+    st.caption(
+        "Proof of concept V0.3 — genera un paquete de despliegue para AutoCAD Plant 3D "
+        "(CustomScript) a partir del Golden Case DN110/PN10/90°. Ninguna API real de "
+        "Plant 3D se invoca desde este entorno (no esta instalado aqui). Ver "
+        "docs/PLANT3D_CUSTOMSCRIPT.md y docs/PLANT3D_ENVIRONMENT.md."
+    )
+
+    st.markdown("**Estado**")
+    col1, col2 = st.columns(2)
+    col1.caption("CustomScript Generator")
+    col1.success("READY")
+
+    env_info = detect_plant3d_environment()
+    col2.caption("Plant environment")
+    if env_info.detected:
+        col2.success(f"DETECTED ({env_info.source})")
+    else:
+        col2.warning("NOT DETECTED")
+
+    with st.expander("Detalle de deteccion de entorno"):
+        st.json(
+            {
+                "detected": env_info.detected,
+                "source": env_info.source,
+                "version": env_info.version,
+                "version_documented": env_info.version_documented,
+                "shared_content_path": env_info.shared_content_path,
+                "custom_scripts_path": env_info.custom_scripts_path,
+                "catalog_path": env_info.catalog_path,
+                "specs_path": env_info.specs_path,
+                "sdk_path": env_info.sdk_path,
+                "platform_name": env_info.platform_name,
+                "candidates_checked": env_info.candidates_checked,
+            }
+        )
+
+    result = build_normalized(repository, dn_mm=110, pn_label="PN10", angle_deg=90)
+    if result.status is DataAvailability.NOT_AVAILABLE:
+        st.error(
+            "Golden Case DN110/PN10/90° no disponible en el catalogo cargado — no se "
+            "puede generar el paquete Plant 3D."
+        )
+        return
+
+    params = result.elbow
+    geometry_3d = build_segmented_elbow_geometry(params)
+    try:
+        validate_segmented_elbow_geometry(params, geometry_3d)
+    except GeometryValidationError as exc:
+        st.error("GEOMETRY_VALIDATION_ERROR en el Golden Case — no se genera el paquete Plant 3D.")
+        for failure in exc.failures:
+            st.code(f"{failure.code}: {failure.message}", language="text")
+        return
+    params.ports = geometry_3d.ports
+    registration = register_hdpe_segmented_elbow(params, geometry_3d)
+
+    if st.button("Generar paquete Plant 3D", key="plant3d_generate"):
+        with st.spinner("Generando CustomScript y paquete de despliegue..."):
+            tmp_dir = Path(tempfile.mkdtemp(prefix="piping_plant3d_"))
+            pkg_dir = tmp_dir / "HDPE_SEGMENTED_ELBOW"
+            package = build_deployment_package(params, geometry_3d, registration, pkg_dir)
+            zip_path_str = shutil.make_archive(
+                str(tmp_dir / "HDPE_SEGMENTED_ELBOW"), "zip", root_dir=tmp_dir, base_dir="HDPE_SEGMENTED_ELBOW"
+            )
+            script_text = (pkg_dir / "HDPE_SEGMENTED_ELBOW.py").read_text(encoding="utf-8")
+        st.session_state["plant3d_zip_bytes"] = Path(zip_path_str).read_bytes()
+        st.session_state["plant3d_script_text"] = script_text
+        st.session_state["plant3d_warnings"] = package.warnings
+        st.success(f"Paquete generado: {len(package.files)} archivos.")
+
+    zip_bytes = st.session_state.get("plant3d_zip_bytes")
+    if zip_bytes:
+        for warning in st.session_state.get("plant3d_warnings", []):
+            st.warning(warning)
+        st.download_button(
+            "Descargar paquete Plant 3D (.zip)",
+            data=zip_bytes,
+            file_name="HDPE_SEGMENTED_ELBOW_plant3d_package.zip",
+            mime="application/zip",
+            key="plant3d_download_zip",
+        )
+        st.markdown("**Golden Case — HDPE_SEGMENTED_ELBOW.py**")
+        st.code(st.session_state.get("plant3d_script_text", ""), language="python")
+
+    st.info(
+        "Estado maximo declarado para este paquete: PLANT3D_PACKAGE_READY_FOR_VALIDATION. "
+        "Nunca se declara PLANT3D_VALIDATED sin evidencia real registrada en "
+        "plant3d_validation/ (ver docs/PLANT3D_MODEL_ACCEPTANCE.md)."
+    )
+
+
 def main() -> None:
-    st.title("Piping Component Generator — V0.2.2")
+    st.title("Piping Component Generator — V0.3")
     st.caption(
         "Codo HDPE segmentado PE100 (DIN 16963), con motor geometrico 3D real "
         "(gajos + planos a inglete). Independiente de AutoCAD Plant 3D."
@@ -559,6 +656,7 @@ def main() -> None:
         )
 
     render_available_libraries()
+    render_plant3d_section(repository)
 
 
 if __name__ == "__main__":
