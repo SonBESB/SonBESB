@@ -22,12 +22,25 @@ from cad.backends.base_backend import CadBackendUnavailableError
 from cad.backends.cadquery_backend import CADQUERY_AVAILABLE, CadQueryElbowBackend
 from components.elbows.hdpe_segmented_elbow import build_custom, build_normalized
 from core.geometry.elbow_geometry import build_elbow_geometry
+from core.geometry.engineering_report import (
+    build_fabrication_table,
+    build_overall_dimensions,
+    build_union_table,
+)
 from core.geometry.geometry_validation import GeometryValidationError, validate_segmented_elbow_geometry
 from core.geometry.segmented_elbow import build_segmented_elbow_geometry
 from core.models.common import DataAvailability, EndType
 from core.serialization.json_export import elbow_to_dict
 from core.validation.elbow_validation import Severity, has_blocking_errors
+from core.validation.reference_comparison import (
+    ComparisonStatus,
+    ReferenceMeasurement,
+    compare_gajo_lengths,
+    compare_overall_dimensions,
+    has_any_reference_value,
+)
 from data.repository import ElbowRepository
+from ui.engineering_view import build_engineering_figure
 from ui.plotly_view import build_elbow_figure
 from ui.plotly_view3d import build_elbow_figure_3d
 from ui.results_view import build_result_rows
@@ -115,6 +128,7 @@ def render_component(params, missing_fields, key_prefix: str, extra_notes=None) 
         st.plotly_chart(fig3d, use_container_width=True, key=f"{key_prefix}_chart3d")
 
         render_cad_export(geometry_3d, params, key_prefix)
+        render_engineering_validation(params, geometry_3d, title, key_prefix)
 
     st.subheader("Exportar componente (JSON)")
     component_json = elbow_to_dict(params, geometry=geometry_3d if validation_ok else None)
@@ -165,6 +179,184 @@ def render_cad_export(geometry_3d, params, key_prefix: str) -> None:
             "Descargar STL", data=stl_bytes, file_name=f"{key_prefix}_elbow.stl",
             mime="model/stl", key=f"{key_prefix}_download_stl",
         )
+
+
+TOLERANCE_PRESETS = {"±1 mm": 1.0, "±2 mm": 2.0, "±5 mm": 5.0, "Personalizada": None}
+
+
+def _status_badge(status: ComparisonStatus) -> str:
+    return "PASS" if status is ComparisonStatus.PASS else "FAIL"
+
+
+def render_engineering_validation(params, geometry_3d, title: str, key_prefix: str) -> None:
+    st.subheader("Validacion de ingenieria")
+    st.warning(
+        "MODELO MATEMATICO — PENDIENTE DE VALIDACION CONTRA REFERENCIA FISICA/CAD. "
+        "La geometria generada es una HIPOTESIS DE MODELADO (que los puntos de union de "
+        "los gajos estan inscritos en el circulo de radio R, ver "
+        "docs/GEOMETRY_VALIDATION_REFERENCE.md), no un hecho confirmado. Que Z, el radio "
+        "o el cierre geometrico coincidan con el catalogo NO confirma esta hipotesis por "
+        "si solo — para eso es esta seccion."
+    )
+
+    st.markdown("**Vista de ingenieria**")
+    col_a, col_b, col_c = st.columns(3)
+    show_r_circle = col_a.checkbox("Mostrar circunferencia teorica R", value=True, key=f"{key_prefix}_eng_r")
+    show_unions = col_b.checkbox("Mostrar puntos de union", value=True, key=f"{key_prefix}_eng_unions")
+    show_cotas = col_c.checkbox("Mostrar cotas principales", value=True, key=f"{key_prefix}_eng_cotas")
+
+    fig_eng = build_engineering_figure(
+        geometry_3d, params, title=title,
+        show_r_circle=show_r_circle, show_unions=show_unions, show_cotas=show_cotas,
+    )
+    st.plotly_chart(fig_eng, use_container_width=True, key=f"{key_prefix}_eng_chart")
+
+    fabrication_rows = build_fabrication_table(params, geometry_3d)
+    if fabrication_rows:
+        st.markdown("**Tabla de fabricacion / modelado por gajo**")
+        st.dataframe(
+            {
+                "Gajo": [r.gajo for r in fabrication_rows],
+                "Angulo (deg)": [r.angle_deg for r in fabrication_rows],
+                "Angulo acumulado (deg)": [r.cumulative_angle_deg for r in fabrication_rows],
+                "Long. eje (mm)": [round(r.axis_length_mm, 2) for r in fabrication_rows],
+                "Long. exterior aprox. (mm)": [round(r.outer_length_approx_mm, 2) for r in fabrication_rows],
+                "Long. interior aprox. (mm)": [round(r.inner_length_approx_mm, 2) for r in fabrication_rows],
+                "Inicio XYZ (mm)": [tuple(round(c, 2) for c in r.start_point_mm) for r in fabrication_rows],
+                "Termino XYZ (mm)": [tuple(round(c, 2) for c in r.end_point_mm) for r in fabrication_rows],
+                "Direccion eje": [tuple(round(c, 4) for c in r.direction) for r in fabrication_rows],
+                "Plano corte inicial (deg)": [round(r.start_cut_plane_angle_deg, 3) for r in fabrication_rows],
+                "Plano corte final (deg)": [round(r.end_cut_plane_angle_deg, 3) for r in fabrication_rows],
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info(
+            "Sin desglose de gajos disponible para este angulo: no se genera tabla de "
+            "fabricacion (ver aviso de configuracion de segmentos arriba)."
+        )
+
+    union_rows = build_union_table(geometry_3d)
+    if union_rows:
+        st.markdown("**Uniones (planos de inglete) y distancias**")
+        st.dataframe(
+            {
+                "Union": [u.label for u in union_rows],
+                "Posicion XYZ (mm)": [tuple(round(c, 2) for c in u.position_mm) for u in union_rows],
+                "Distancia a la siguiente (mm)": [
+                    round(u.distance_to_next_mm, 2) if i < len(union_rows) - 1 else "—"
+                    for i, u in enumerate(union_rows)
+                ],
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    overall = build_overall_dimensions(params, geometry_3d)
+    st.markdown("**Dimensiones generales del solido**")
+    st.table(
+        {
+            "Dimension": [
+                "Ancho total", "Alto total", "Largo total", "Distancia P1-P2",
+                "Distancia P1 - vertice teorico", "Distancia P2 - vertice teorico",
+                "R utilizado", "Z resultante",
+            ],
+            "Valor (mm)": [
+                round(overall.width_mm, 2), round(overall.height_mm, 2), round(overall.length_mm, 2),
+                round(overall.p1_p2_distance_mm, 2), round(overall.p1_to_vertex_mm, 2),
+                round(overall.p2_to_vertex_mm, 2), round(overall.radius_used_mm, 2),
+                round(overall.z_resultant_mm, 2),
+            ],
+        }
+    )
+
+    st.markdown("**Comparacion: MODELO PARAMETRICO vs MODELO DE REFERENCIA**")
+    st.caption(
+        "Ingresa las medidas reales obtenidas del modelo de referencia (CAD/fisico). "
+        "Deja en 0 los campos que aun no tengas — se omiten de la comparacion, nunca se "
+        "asume un valor. La geometria nunca se ajusta automaticamente para coincidir."
+    )
+
+    tolerance_label = st.selectbox(
+        "Tolerancia", list(TOLERANCE_PRESETS.keys()), index=0, key=f"{key_prefix}_tolerance_preset"
+    )
+    if TOLERANCE_PRESETS[tolerance_label] is None:
+        tolerance_mm = st.number_input(
+            "Tolerancia personalizada (mm)", min_value=0.0, value=1.0, step=0.1, key=f"{key_prefix}_tolerance_custom"
+        )
+    else:
+        tolerance_mm = TOLERANCE_PRESETS[tolerance_label]
+
+    ref_col1, ref_col2, ref_col3, ref_col4 = st.columns(4)
+    ref_width = ref_col1.number_input("Ancho total ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_width")
+    ref_height = ref_col2.number_input("Alto total ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_height")
+    ref_length = ref_col3.number_input("Largo total ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_length")
+    ref_p1p2 = ref_col4.number_input("Distancia P1-P2 ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_p1p2")
+
+    ref_col5, ref_col6, ref_col7, ref_col8 = st.columns(4)
+    ref_p1v = ref_col5.number_input("P1-vertice ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_p1v")
+    ref_p2v = ref_col6.number_input("P2-vertice ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_p2v")
+    ref_r = ref_col7.number_input("R utilizado ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_r")
+    ref_z = ref_col8.number_input("Z resultante ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_z")
+
+    ref_gajo_lengths: list = []
+    if fabrication_rows:
+        st.caption("Longitud de eje de referencia por gajo (opcional, deja en 0 si no aplica):")
+        gajo_cols = st.columns(len(fabrication_rows))
+        for i, col in enumerate(gajo_cols):
+            ref_gajo_lengths.append(
+                col.number_input(
+                    f"Gajo {i + 1} ref. (mm)", min_value=0.0, value=0.0, key=f"{key_prefix}_ref_gajo_{i}"
+                )
+            )
+
+    reference = ReferenceMeasurement(
+        width_mm=ref_width or None,
+        height_mm=ref_height or None,
+        length_mm=ref_length or None,
+        p1_p2_distance_mm=ref_p1p2 or None,
+        p1_to_vertex_mm=ref_p1v or None,
+        p2_to_vertex_mm=ref_p2v or None,
+        radius_used_mm=ref_r or None,
+        z_resultant_mm=ref_z or None,
+        gajo_axis_lengths_mm=[v or None for v in ref_gajo_lengths],
+    )
+
+    if has_any_reference_value(reference):
+        comparison_rows = compare_overall_dimensions(overall, reference, tolerance_mm=tolerance_mm)
+        comparison_rows += compare_gajo_lengths(
+            [r.axis_length_mm for r in fabrication_rows], reference, tolerance_mm=tolerance_mm
+        )
+
+        st.dataframe(
+            {
+                "Campo": [r.label for r in comparison_rows],
+                "Parametrico (mm)": [round(r.parametric_value_mm, 3) for r in comparison_rows],
+                "Referencia (mm)": [round(r.reference_value_mm, 3) for r in comparison_rows],
+                "Diferencia absoluta (mm)": [round(r.abs_diff_mm, 3) for r in comparison_rows],
+                "Diferencia (%)": [round(r.pct_diff, 2) for r in comparison_rows],
+                "Tolerancia (mm)": [r.tolerance_mm for r in comparison_rows],
+                "Estado": [_status_badge(r.status) for r in comparison_rows],
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        failed_rows = [r for r in comparison_rows if r.status is ComparisonStatus.FAIL]
+        if failed_rows:
+            st.error(f"{len(failed_rows)} campo(s) fuera de tolerancia (±{tolerance_mm:g} mm).")
+            for r in failed_rows:
+                st.markdown(f"- **{r.label}**: {r.hypothesis_note}")
+        else:
+            st.success(
+                f"Todos los campos ingresados estan dentro de tolerancia (±{tolerance_mm:g} mm) "
+                "para esta referencia. Esto NO cambia el estado global del modelo — sigue "
+                "PENDIENTE DE VALIDACION hasta una revision deliberada con el modelo de "
+                "referencia completo."
+            )
+    else:
+        st.caption("Ingresa al menos un valor de referencia para ver la comparacion.")
 
 
 def render_normalized_tab(repository: ElbowRepository) -> None:

@@ -101,6 +101,38 @@ correcta para exportacion CAD. Pero es una dependencia pesada y opcional
 mensaje claro; el resto de la app (incluida la vista 3D) sigue
 funcionando igual.
 
+## Validacion de ingenieria (V0.2.1 — core/geometry/engineering_report.py, core/validation/reference_comparison.py)
+
+`segmented_elbow.py` construye la geometria bajo una hipotesis de
+modelado explicita (los puntos de union de los gajos estan inscritos en
+el circulo de radio R — ver `docs/GEOMETRY_VALIDATION_REFERENCE.md`).
+Que esa geometria cierre matematicamente (Z, radio, angulo) no prueba
+que la hipotesis sea correcta, solo que es autoconsistente. V0.2.1 agrega
+la capa que permite *comprobarla* contra una referencia externa:
+
+- `core/geometry/engineering_report.py`: lee (nunca modifica) la
+  `SegmentedElbowGeometry` ya construida y produce una tabla de
+  fabricacion por gajo (longitudes de eje/exterior/interior, coordenadas,
+  angulos de los planos de corte) y las dimensiones generales del solido
+  — usando formulas independientes de las que construyeron la geometria,
+  para que sirvan de chequeo real y no una relectura circular.
+- `core/validation/reference_comparison.py`: compara esas dimensiones
+  contra medidas de referencia que el usuario ingresa (un codo diseñado
+  a mano o fabricado), campo por campo, con tolerancia editable y
+  PASS/FAIL. Nunca ajusta la geometria para que coincida. Cada campo
+  reprobado se asocia a la hipotesis de modelado especifica de la que
+  depende (`FIELD_HYPOTHESIS_NOTES`), para que una desviacion apunte a
+  que revisar, no solo a que "algo no coincide".
+- `ui/engineering_view.py`: agrega a la vista 3D la circunferencia
+  teorica R, los puntos de union y las cotas principales — para que la
+  hipotesis se pueda *ver*, no solo confiar en que el numero cierra.
+
+El banner de la UI ("MODELO MATEMATICO — PENDIENTE DE VALIDACION...") es
+deliberadamente estatico: una comparacion satisfactoria contra algunos
+campos de referencia no cambia automaticamente el estado a "validado" —
+eso queda para una decision explicita una vez comparado contra el modelo
+de referencia completo.
+
 ## Separacion de modos
 
 - **Modo A (Normalizado)**: `data/repository.py` — nunca inventa datos.
