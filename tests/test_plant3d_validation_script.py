@@ -69,20 +69,28 @@ def test_validation_script_keeps_golden_case_parameter_defaults():
     assert "OD=110.0, THK=6.6, R=165.0, LE=150.0, Z=315.0" in result.source_code
 
 
-def test_validation_script_does_not_call_rotate_or_unite_yet():
-    """rotateY/uniteWith are deliberately deferred to V0.3.1B — their
-    placement/rotation semantics are not confirmed yet (see module
-    docstring)."""
+def test_validation_script_uses_the_confirmed_cylinder_signature():
+    """CYLINDER(s, R=, H=, O=).rotateY(90.0) — corrected in V0.3.1A after
+    an independent WebSearch corroboration (Autodesk KB article + Annex B
+    handout) matched the user-proposed call, distinct from the earlier
+    best-effort CYLINDER(OD, LE) guess."""
     result = generate_validation_script()
     body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
-    assert ".rotateY(" not in body
+    assert "CYLINDER(" in body
+    assert "R=OD / 2.0" in body
+    assert "H=LE" in body
+    assert "O=0.0" in body
+    assert ".rotateY(90.0)" in body
+    # Nothing to union yet: only one primitive is built in V0.3.1A.
     assert ".uniteWith(" not in body
-    assert any("rotateY" in w for w in result.warnings)
 
 
-def test_validation_script_flags_cylinder_argument_order_as_unconfirmed():
+def test_validation_script_flags_deviation_from_users_setpoint_arity():
+    """The user's proposed correction dropped the third argument from
+    the first s.setPoint(...) call; this generator keeps 3 args on both
+    (the literally-confirmed TESTSCRIPT2 shape) and must say so."""
     result = generate_validation_script()
-    assert any("CYLINDER" in w and "NO confirmado" in w for w in result.warnings)
+    assert any("setPoint" in w and "2 argumentos" in w for w in result.warnings)
 
 
 def test_validation_script_cites_sources():

@@ -72,3 +72,37 @@ puertos via s.setPoint(...)) contra este mismo entorno, ejecutando de
 nuevo PLANTREGISTERCUSTOMSCRIPTS y luego
 (testacpscript "HDPE_SEGMENTED_ELBOW"). Registrar el resultado real en
 una nueva entrada fechada a continuacion de esta, sin sobrescribirla.
+
+===================================================================
+Actualizacion V0.3.1A (segunda iteracion, aun sin probar en real) --
+2026-08-24
+===================================================================
+
+El usuario aporto una correccion al constructor de CYLINDER usado en la
+primera version de V0.3.1A, atribuyendola a documentacion de Autodesk:
+
+  CYLINDER(s, R=D/2.0, H=L, O=0.0).rotateY(90.0)
+
+en vez de la reconstruccion best-effort anterior (CYLINDER(OD, LE), sin
+cita literal). Se re-verifico via WebSearch (WebFetch sigue bloqueado en
+el sandbox de desarrollo) y se encontro corroboracion independiente:
+un resultado citando el articulo oficial de la KB de Autodesk "Plant 3D
+Custom Python scripting for catalog parts Reference" y el handout
+"Annex B: Creating Custom Component Scripts in Plant 3D" describe un
+TESTSCRIPT real que construye exactamente
+CYLINDER(s, R=D/2, H=L, O=0.0).rotateY(90). Con esta segunda fuente
+independiente, HDPE_SEGMENTED_ELBOW.py se actualizo a esa firma.
+
+Se mantuvieron 3 argumentos en ambas llamadas s.setPoint(...) (la
+correccion del usuario traia solo 2 en la primera) porque el unico
+ejemplo real citado literalmente (TESTSCRIPT2) usa 3 en las dos -- esto
+se le senalo al usuario en vez de copiarse tal cual.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+Siguiente paso: reemplazar el .py en CustomScripts, PLANTREGISTERCUSTOMSCRIPTS,
+cerrar y reabrir Plant 3D, (arxload "PnP3dACPAdapter"),
+(testacpscript "HDPE_SEGMENTED_ELBOW"), y registrar el resultado real
+(objeto visible o no) en una nueva entrada fechada a continuacion de
+esta.

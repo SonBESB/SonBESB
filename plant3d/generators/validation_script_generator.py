@@ -17,38 +17,33 @@ plant3d_validation/registration_result.txt) showed:
     (TESTSCRIPT2, see below).
 
 This generator produces a corrected, deliberately minimal script: ONE
-straight CYLINDER with two ports, built only from Plant 3D API elements
-independently corroborated by multiple real script excerpts (see
-SOURCE_CITATIONS). Its purpose is narrow: confirm SCRIPT EXECUTION,
-GEOMETRY API and PORT API work end to end on a real Plant 3D 2025
-install, before attempting the real DIN 16963 segmented geometry
-(V0.3.1B). It is explicitly NOT the codo — every emitted artifact is
-labeled VALIDATION_GEOMETRY_ONLY, never claimed to represent the DIN
-16963 elbow.
+straight CYLINDER (correctly oriented along X via .rotateY(90.0)) with
+two ports, built only from Plant 3D API elements independently
+corroborated by real script excerpts (see SOURCE_CITATIONS). Its purpose
+is narrow: confirm SCRIPT EXECUTION, GEOMETRY API and PORT API work end
+to end on a real Plant 3D 2025 install, before attempting the real DIN
+16963 segmented geometry (V0.3.1B). It is explicitly NOT the codo —
+every emitted artifact is labeled VALIDATION_GEOMETRY_ONLY, never
+claimed to represent the DIN 16963 elbow.
 
-HONESTY NOTE ON CYLINDER(...): its existence, and its use together with
-.rotateY(...)/.uniteWith(...) in exactly a build/transform/boolean
-pattern, is corroborated by multiple independent real Plant3D
-CustomScript excerpts (see SOURCE_CITATIONS: mgfx.co.za's "Adding Custom
-Components" series, enginine.com's tubing-fittings case study, the
-PD1746 Autodesk University handout). No single literal quote of
-CYLINDER's exact constructor argument order was found in this project's
-sandbox — WebFetch is blocked here (same limitation already documented
-for V0.3 in docs/PLANT3D_CUSTOMSCRIPT.md), so only WebSearch snippets
-were available, not full page content. The (outside_diameter, length)
-argument order used below is therefore a best-effort reconstruction from
-those excerpts, NOT a verified literal citation. If it raises an error
-or draws something unexpected on the real install, that IS new evidence
-— report it back so this gets corrected against Plant 3D's real
-signature instead of guessed again.
-
-.rotateY(...) and .uniteWith(...) are deliberately NOT used yet in this
-minimal script: composing two primitives correctly needs a confirmed
-placement/rotation semantic (does rotateY act about the primitive's own
-origin or the current UCS? is a translate call needed first?) that this
-project does not have evidence for. They stay deferred to V0.3.1B, once
-this simpler single-cylinder case confirms CYLINDER + setPoint work at
-all on this real install.
+UPDATE (second correction, still V0.3.1A): the first cut of this script
+used CYLINDER(OD, LE) — a best-effort argument-order guess, explicitly
+flagged as unconfirmed. The user then supplied a corrected call,
+CYLINDER(s, R=D/2.0, H=L, O=0.0).rotateY(90.0), attributing it to
+Autodesk documentation. Rather than taking that on trust alone, this
+project re-ran the same WebSearch-only investigation used throughout
+V0.3/V0.3.1 (WebFetch stays blocked in this sandbox — only search
+snippets are reachable) and found an INDEPENDENT corroboration: a
+result citing the official Autodesk KB article "Plant 3D Custom Python
+scripting for catalog parts Reference" and the "Annex B: Creating Custom
+Component Scripts in Plant 3D" handout describes a real TESTSCRIPT that
+builds "CYLINDER(s, R=D/2, H=L, O=0.0).rotateY(90)" — the same call
+shape, from a source distinct from the user's own claim. See
+SOURCE_CITATIONS for both. CYLINDER(s, R=, H=, O=).rotateY(...) is
+therefore now used with a confidence level closer to the entry-point/
+setPoint pattern than to a guess — though still only via WebSearch
+snippets, not a fetched primary document, so it is not treated as
+absolutely final until the real install confirms it.
 
 The entry point signature and both s.setPoint(...) calls below ARE a
 close match to a literal, independently-found real example — a
@@ -58,6 +53,18 @@ close match to a literal, independently-found real example — a
         ...
         s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)
         s.setPoint((L, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)
+
+Both calls use 3 positional args (position, direction, 0.0). The user's
+proposed correction dropped the third argument from the FIRST setPoint
+call only (leaving the second one with it) — most likely a transcription
+slip, since nothing in their message described changing setPoint's
+arity, only CYLINDER's. This generator keeps 3 args on BOTH calls, since
+that is what the one literal citation this project actually has (above)
+shows, and a mismatched 2-vs-3-arg pair is not itself evidence of
+anything — it was flagged back to the user rather than followed as
+written. .uniteWith(...) is still not used here: this script builds only
+one primitive, so there is nothing to union yet (that belongs to
+V0.3.1B, once real segments need combining).
 
 — see SOURCE_CITATIONS.
 """
@@ -77,6 +84,9 @@ SOURCE_CITATIONS = (
     "https://enginine.com/2025/11/11/custom-python-scripts-for-autocad-plant-3d-case-study-of-tubing-fittings-part-1/",
     "https://pipingcontent.com/blog/plant3d-python-testacpscript-debugging-loop",
     "https://forums.autodesk.com/t5/autocad-plant-3d-forum/testacpscript-unknown-command/td-p/11901666",
+    # Added for the CYLINDER(s, R=, H=, O=).rotateY(...) correction:
+    "https://www.autodesk.com/support/technical/article/caas/tsarticles/ts/6z7yLhwAUHwiyYQaRqYdo.html",
+    "https://forums.autodesk.com/autodesk/attachments/autodesk/autocad-plant-3d-forum-zh-cn/4870/1/v1_PD4214-L_Radhakrishnan_AnnexB_Custom-Script-Handout.pdf",
 )
 
 
@@ -148,26 +158,42 @@ def {script_name}(s, OD=110.0, THK=6.6, R=165.0, LE=150.0, Z=315.0, **kw):
     CYLINDER(...) + s.setPoint(...) funcionan en un Plant 3D 2025 real.
     Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
     """
-    # HONESTY NOTE: (OD, LE) como orden de argumentos de CYLINDER es una
-    # reconstruccion best-effort a partir de multiples ejemplos reales
-    # independientes (ver SOURCE_CITATIONS arriba), NO una firma citada
-    # literalmente. Si esto falla o dibuja algo incorrecto en el
-    # entorno real, eso ES evidencia nueva a reportar.
-    tramo = CYLINDER(OD, LE)
+    # CYLINDER(s, R=, H=, O=).rotateY(90.0): firma corroborada por una
+    # fuente independiente de la que aporto el usuario (KB oficial de
+    # Autodesk + handout Annex B, ver SOURCE_CITATIONS arriba) -- no se
+    # tomo la correccion del usuario solo de confianza, se re-verifico.
+    # "R" es el nombre del parametro real de CYLINDER, no confundir con
+    # el parametro @param(R=...) del codo (radio de curvatura, sin usar
+    # todavia en V0.3.1A): aqui R = OD / 2.0 (radio del tubo).
+    tramo = CYLINDER(
+        s,
+        R=OD / 2.0,
+        H=LE,
+        O=0.0,
+    ).rotateY(90.0)
 
-    # Puertos: esta forma exacta de llamada (posicion, direccion, 0.0) es
-    # una coincidencia cercana con un ejemplo real citado literalmente
-    # (TESTSCRIPT2) -- ver SOURCE_CITATIONS arriba.
+    # Puertos: forma de llamada (posicion, direccion, 0.0) confirmada por
+    # el ejemplo real citado literalmente (TESTSCRIPT2) -- ver
+    # SOURCE_CITATIONS arriba. Se mantienen 3 argumentos en ambas
+    # llamadas (la correccion propuesta traia solo 2 en la primera; sin
+    # evidencia de esa variante, se preservo la forma ya confirmada).
     s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)
     s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)
 '''
 
     warnings = [
-        "CYLINDER(OD, LE) usa un orden de argumentos NO confirmado literalmente "
-        "(best-effort desde multiples ejemplos reales independientes) -- ver "
-        "docs/PLANT3D_CUSTOMSCRIPT.md seccion V0.3.1.",
-        ".rotateY(...) y .uniteWith(...) se difieren a V0.3.1B: no se usan aqui "
-        "para no inventar semantica de posicionamiento/rotacion sin confirmar.",
+        "CYLINDER(s, R=OD/2.0, H=LE, O=0.0).rotateY(90.0): firma corroborada por "
+        "una fuente independiente (KB Autodesk + Annex B handout), no solo por la "
+        "correccion aportada por el usuario -- ver docs/PLANT3D_CUSTOMSCRIPT.md "
+        "seccion V0.3.1. Aun asi solo via snippets de WebSearch (WebFetch sigue "
+        "bloqueado), por lo que la confirmacion final sigue siendo la prueba real.",
+        "La primera llamada s.setPoint(...) de la correccion propuesta por el "
+        "usuario traia solo 2 argumentos (sin el 0.0 final); se mantuvo con 3 "
+        "argumentos en ambas llamadas, que es la forma con cita literal "
+        "confirmada (TESTSCRIPT2) -- posible error de transcripcion del usuario, "
+        "senalado en vez de seguido tal cual.",
+        ".uniteWith(...) no se usa en V0.3.1A: solo hay un primitivo (un "
+        "CYLINDER), no hay nada que unir todavia -- eso queda para V0.3.1B.",
     ]
 
     return GeneratedValidationScript(script_name=script_name, source_code=source, warnings=warnings)

@@ -211,7 +211,7 @@ point roto por uno mínimo y correctamente nombrado:
 
 ```python
 def HDPE_SEGMENTED_ELBOW(s, OD=110.0, THK=6.6, R=165.0, LE=150.0, Z=315.0, **kw):
-    tramo = CYLINDER(OD, LE)
+    tramo = CYLINDER(s, R=OD / 2.0, H=LE, O=0.0).rotateY(90.0)
     s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)
     s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)
 ```
@@ -219,13 +219,42 @@ def HDPE_SEGMENTED_ELBOW(s, OD=110.0, THK=6.6, R=165.0, LE=150.0, Z=315.0, **kw)
 Explícitamente marcado `VALIDATION_GEOMETRY_ONLY` — un solo tramo recto,
 NO el codo segmentado DIN 16963. Su único propósito es confirmar, en
 Plant 3D 2025 real, que `SCRIPT EXECUTION`, `GEOMETRY API`
-(`CYLINDER(...)`) y `PORT API` (`s.setPoint(...)`) funcionan de extremo a
-extremo antes de intentar la geometría segmentada real (V0.3.1B). No usa
-`.rotateY(...)` ni `.uniteWith(...)` todavía — deliberadamente diferido
-hasta confirmar su semántica de posicionamiento con evidencia real.
+(`CYLINDER(...).rotateY(...)`) y `PORT API` (`s.setPoint(...)`) funcionan
+de extremo a extremo antes de intentar la geometría segmentada real
+(V0.3.1B). `.uniteWith(...)` no se usa todavía — solo hay un primitivo,
+nada que unir hasta V0.3.1B.
+
+**Corrección del constructor de `CYLINDER` (segunda iteración de
+V0.3.1A):** la primera versión usaba `CYLINDER(OD, LE)`, marcado
+explícitamente como reconstrucción best-effort sin cita literal. El
+usuario propuso la corrección `CYLINDER(s, R=D/2.0, H=L, O=0.0)` +
+`.rotateY(90.0)`, atribuyéndola a documentación de Autodesk. En vez de
+aceptarla solo de confianza, se repitió la misma investigación
+WebSearch-only ya usada en todo V0.3/V0.3.1 (`WebFetch` sigue bloqueado
+en este sandbox) y se encontró una corroboración **independiente**: un
+resultado que cita el artículo oficial de la base de conocimiento de
+Autodesk *"Plant 3D Custom Python scripting for catalog parts
+Reference"* junto con el handout *"Annex B: Creating Custom Component
+Scripts in Plant 3D"*, describiendo un `TESTSCRIPT` real que construye
+`CYLINDER(s, R=D/2, H=L, O=0.0).rotateY(90)` — la misma forma de llamada,
+desde una fuente distinta a la del usuario. Con esa segunda fuente, la
+firma pasó de "reconstrucción best-effort" a "corroborada de forma
+independiente" (aunque todavía solo vía snippets de `WebSearch`, no el
+documento completo — la confirmación definitiva sigue siendo la prueba
+real en Plant 3D).
+
+También se detectó una inconsistencia menor en la corrección propuesta
+por el usuario: su primera llamada `s.setPoint(...)` traía solo 2
+argumentos (sin el `0.0` final), mientras la segunda sí lo traía. Como
+no hay evidencia de una variante de 2 argumentos y el único ejemplo real
+citado literalmente (`TESTSCRIPT2`) usa 3 argumentos en ambas llamadas,
+el generador mantiene 3 argumentos en las dos — la discrepancia se
+señaló en vez de copiarse tal cual (probable error de transcripción del
+usuario, no una corrección deliberada).
+
 Generador cubierto por `tests/test_plant3d_validation_script.py`
-(validez `ast.parse()`, determinismo, nombre de entry point, patrón de
-puertos, ausencia de `.pcat`/`.pspx`/`.pspc`).
+(validez `ast.parse()`, determinismo, nombre de entry point, firma de
+`CYLINDER`, patrón de puertos, ausencia de `.pcat`/`.pspx`/`.pspc`).
 
 ### Siguiente paso
 

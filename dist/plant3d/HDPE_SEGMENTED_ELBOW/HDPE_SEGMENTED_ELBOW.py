@@ -27,6 +27,8 @@ sources behind every call below, and for what V0.3.1B still needs.
 #   - https://enginine.com/2025/11/11/custom-python-scripts-for-autocad-plant-3d-case-study-of-tubing-fittings-part-1/
 #   - https://pipingcontent.com/blog/plant3d-python-testacpscript-debugging-loop
 #   - https://forums.autodesk.com/t5/autocad-plant-3d-forum/testacpscript-unknown-command/td-p/11901666
+#   - https://www.autodesk.com/support/technical/article/caas/tsarticles/ts/6z7yLhwAUHwiyYQaRqYdo.html
+#   - https://forums.autodesk.com/autodesk/attachments/autodesk/autocad-plant-3d-forum-zh-cn/4870/1/v1_PD4214-L_Radhakrishnan_AnnexB_Custom-Script-Handout.pdf
 # ---------------------------------------------------------------------------
 from aqa.math import *
 from varmain.primitiv import *
@@ -54,15 +56,24 @@ def HDPE_SEGMENTED_ELBOW(s, OD=110.0, THK=6.6, R=165.0, LE=150.0, Z=315.0, **kw)
     CYLINDER(...) + s.setPoint(...) funcionan en un Plant 3D 2025 real.
     Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
     """
-    # HONESTY NOTE: (OD, LE) como orden de argumentos de CYLINDER es una
-    # reconstruccion best-effort a partir de multiples ejemplos reales
-    # independientes (ver SOURCE_CITATIONS arriba), NO una firma citada
-    # literalmente. Si esto falla o dibuja algo incorrecto en el
-    # entorno real, eso ES evidencia nueva a reportar.
-    tramo = CYLINDER(OD, LE)
+    # CYLINDER(s, R=, H=, O=).rotateY(90.0): firma corroborada por una
+    # fuente independiente de la que aporto el usuario (KB oficial de
+    # Autodesk + handout Annex B, ver SOURCE_CITATIONS arriba) -- no se
+    # tomo la correccion del usuario solo de confianza, se re-verifico.
+    # "R" es el nombre del parametro real de CYLINDER, no confundir con
+    # el parametro @param(R=...) del codo (radio de curvatura, sin usar
+    # todavia en V0.3.1A): aqui R = OD / 2.0 (radio del tubo).
+    tramo = CYLINDER(
+        s,
+        R=OD / 2.0,
+        H=LE,
+        O=0.0,
+    ).rotateY(90.0)
 
-    # Puertos: esta forma exacta de llamada (posicion, direccion, 0.0) es
-    # una coincidencia cercana con un ejemplo real citado literalmente
-    # (TESTSCRIPT2) -- ver SOURCE_CITATIONS arriba.
+    # Puertos: forma de llamada (posicion, direccion, 0.0) confirmada por
+    # el ejemplo real citado literalmente (TESTSCRIPT2) -- ver
+    # SOURCE_CITATIONS arriba. Se mantienen 3 argumentos en ambas
+    # llamadas (la correccion propuesta traia solo 2 en la primera; sin
+    # evidencia de esa variante, se preservo la forma ya confirmada).
     s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)
     s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)
