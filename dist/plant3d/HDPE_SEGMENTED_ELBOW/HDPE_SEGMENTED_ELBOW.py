@@ -1,33 +1,36 @@
-"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R2: CUTTER VISUAL DEBUG, sin corte ejecutado.
+"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R3A: SINGLE SIDE CUT, solo Gajo A + un cutter.
 
-V0.3.1B3C-1R1 (BOX centrado) se probo real y ejecuto SIN ERROR, pero
-elimino Gajo A y Gajo B por completo -- solo quedo visible la caja de
-calibracion (ver plant3d_validation/registration_result.txt):
+V0.3.1B3C-1R2 (visual debug) se probo real: GAJO_A, GAJO_B, CUTTER_A y
+CUTTER_B se vieron simultaneamente en semiespacios opuestos, orientacion
+coherente con el plano bisector. Unica incertidumbre restante: que
+semiespacio elimina realmente cada cutter al ejecutar subtractFrom().
 
-  B3C-1R1_SCRIPT_EXECUTION = PASS   BOX_CREATION = PASS
-  CALIBRATION_BOX_VISIBLE  = PASS
-  B3C-1R1_MITER_GEOMETRY = FAIL   GAJO_A_SURVIVES_CUT = FAIL
-  GAJO_B_SURVIVES_CUT    = FAIL   COMMON_CUT_PLANE = NOT_VALIDATED
+Este fixture es el minimo posible para responder eso: SOLO Gajo A
+(hueco, mismo patron ya confirmado por B3B-1) + UN cutter BOX, un solo
+subtractFrom(). Sin Gajo B, sin segundo cutter, sin uniteWith, sin
+calibration box.
 
-Esta version es un fixture EXCLUSIVAMENTE de diagnostico: mismo Gajo 2 +
-Gajo 3, mismo joint_point, misma plane_normal, mismos centros/
-rotaciones de cutter que R1 (ningun numero de posicion cambio) -- pero
-NO ejecuta subtractFrom/erase/uniteWith sobre los cutters. Los 4 objetos
-(GAJO_A hueco, GAJO_B hueco, CUTTER_A, CUTTER_B) quedan visibles y
-separados para inspeccionar fisicamente en Plant 3D antes de intentar
-una tercera formula sin haber visto la geometria real de los cutters.
+joint_point, plane_normal, rotateY(45) y _cutter_center() NO cambiaron
+respecto de R1/R2. Lo unico nuevo: el signo de semiespacio para el
+cutter de Gajo A se eligio automaticamente a partir de
+side_a = dot(midpoint_gajo_a - joint_point, plane_normal) = -41.25
+(negativo) -- el cutter debe ocupar el
+semiespacio CONTRARIO al cuerpo del gajo, sign=+1.0.
 
-Toggle incluido en el script:
-    DEBUG_CUTTERS = True   # esta version: cutters visibles, sin resta
-    DEBUG_CUTTERS = False  # comportamiento de R1: resta real + union
 
 No se modifico core/geometry/segmented_elbow.py, joint_point ni
-plane_normal. No se avanza a B3C-2.
+plane_normal. No se avanza a Gajo B ni a B3C-2.
+
+Verificar en Plant 3D:
+  GAJO_A survives?            (deberia sobrevivir, no desaparecer)
+  CUT FACE appears?           (deberia verse una cara de corte nueva)
+  CUT FACE passes joint?      (la cara deberia pasar por el punto de union)
+  CORRECT HALFSPACE removed?  (debe quitar solo la cuna, no toda la pieza)
 
 Golden Case: DN110 PN10 90 grados
-  OD=110 THK=6.6 ID=96.8 R=165
+  OD=110 THK=6.6 R=165
   LE=150 Z=315
-  Junta probada aqui: Gajo 2 (30 deg) / Gajo 3 (30 deg)
+  Pieza probada aqui: Gajo 2 (30 deg), sin Gajo 3.
 """
 
 # ---------------------------------------------------------------------------
@@ -56,10 +59,10 @@ from varmain.custom import *
 
 @activate(
     Group="Fitting",
-    TooltipShort="Cutter visual debug (Gajo2/Gajo3) - sin corte",
-    TooltipLong="V0.3.1B3C-1R2: fixture de diagnostico -- gajos y cutters visibles, sin ejecutar el corte. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
+    TooltipShort="Single side cut (Gajo A) - fixture minimo de diagnostico",
+    TooltipLong="V0.3.1B3C-1R3A: solo Gajo A hueco + un cutter BOX, un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
     LengthUnit="mm",
-    Ports=2,
+    Ports=1,
 )
 @group("MainDimensions")
 @param(OD=LENGTH, TooltipShort="Diametro exterior", TooltipLong="OD (mm) - Golden Case: 110", Ask4Dist=True)
@@ -68,56 +71,26 @@ from varmain.custom import *
 @param(LE=LENGTH, TooltipShort="Longitud tangente (no usada en este fixture)", TooltipLong="Le (mm) - Golden Case: 150. Este fixture no incluye los tramos Le.")
 @param(Z=LENGTH, TooltipShort="Distancia vertice-cara (posiciones ya horneadas)", TooltipLong="Z (mm) - Golden Case: 315.")
 def HDPE_SEGMENTED_ELBOW(s, OD=110, THK=6.6, R=165, LE=150, Z=315, OF=-1, K=1, **kw):
-    """CUTTER_VISUAL_DEBUG -- Gajo2 + Gajo3 huecos + ambos cutters, TODOS visibles, sin corte.
+    """SINGLE_SIDE_CUT -- solo Gajo A hueco + un cutter BOX, un solo subtractFrom.
 
-    NO representa el codo DIN 16963 completo, y en modo DEBUG_CUTTERS=True
-    tampoco representa una junta a inglete real todavia -- es un
-    fixture de calibracion visual. R/LE/Z se reciben pero las posiciones
-    ya vienen horneadas desde core/geometry/segmented_elbow.py (sin
-    modificar). Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+    NO representa el codo completo ni siquiera una junta a inglete
+    completa -- es el fixture minimo para verificar que semiespacio
+    elimina realmente un cutter BOX. Ver docs/PLANT3D_CUSTOMSCRIPT.md,
+    seccion V0.3.1.
     """
-    DEBUG_CUTTERS = True  # True = cutters visibles, sin resta. False = corte real (comportamiento R1).
-
     radio_ext_mm = OD / 2.0
     radio_int_mm = (OD - 2 * THK) / 2.0
 
-    # Gajo 2 (hueco) -- taladro interior ya confirmado en real por B3B-1, se mantiene.
+    # Gajo A (hueco) -- taladro interior ya confirmado en real por B3B-1.
     ext_a = CYLINDER(s, R=radio_ext_mm, H=85.4103, O=0.0).rotateY(60).translate((-122.295, 0, 5.62224))
     int_a = CYLINDER(s, R=radio_int_mm, H=95.4103, O=-5).rotateY(60).translate((-122.295, 0, 5.62224))
     ext_a.subtractFrom(int_a)
     int_a.erase()
 
-    # Gajo 3 (hueco)
-    ext_b = CYLINDER(s, R=radio_ext_mm, H=85.4103, O=0.0).rotateY(30).translate((-48.3274, 0, 48.3274))
-    int_b = CYLINDER(s, R=radio_int_mm, H=95.4103, O=-5).rotateY(30).translate((-48.3274, 0, 48.3274))
-    ext_b.subtractFrom(int_b)
-    int_b.erase()
-
-    # Cutters -- MISMOS centro/rotacion que V0.3.1B3C-1R1 (ver docstring del
-    # modulo generador para la verificacion algebraica). En modo debug NO se
-    # restan de los gajos ni se borran, para poder inspeccionarlos por separado.
-    # cutter_a: centro = joint_point + (H/2)*plane_normal (cara cercana en joint_point, mirando -normal).
+    # Un solo cutter -- mismo joint_point/plane_normal/rotateY(45) que R1/R2,
+    # semiespacio elegido automaticamente (side_a=-41.25, sign=+1.0).
     cutter_a = BOX(s, L=2000, W=2000, H=500).rotateY(45).translate((128.449, 0, 225.104))
-
-    # cutter_b: centro = joint_point - (H/2)*plane_normal (cara cercana en joint_point, mirando +normal).
-    cutter_b = BOX(s, L=2000, W=2000, H=500).rotateY(45).translate((-225.104, 0, -128.449))
-
-    if DEBUG_CUTTERS:
-        pass  # GAJO_A, GAJO_B, CUTTER_A, CUTTER_B quedan todos visibles, sin tocar.
-    else:
-        # Comportamiento de V0.3.1B3C-1R1 (corte real):
-        ext_a.subtractFrom(cutter_a)
-        cutter_a.erase()
-        ext_b.subtractFrom(cutter_b)
-        cutter_b.erase()
-        ext_a.uniteWith(ext_b)
-        ext_b.erase()
+    ext_a.subtractFrom(cutter_a)
+    cutter_a.erase()
 
     s.setPoint((-122.295, 0, 5.62224), (-0.866025, -0, -0.5), 0.0)
-    s.setPoint((-5.62224, 0, 122.295), (0.5, 0, 0.866025), 0.0)
-
-    # CALIBRATION_BOX_TEMPORARY -- no forma parte del codo, no se une ni se
-    # resta de nada. Tres dimensiones distintas (L=30, W=15, H=5) y sin
-    # rotar, lejos de la geometria real, para confirmar visualmente que eje
-    # mundial corresponde a cada parametro de BOX.
-    calibration_box = BOX(s, L=30, W=15, H=5).rotateY(0.0).translate((800, 800, 800))

@@ -617,3 +617,207 @@ def {script_name}(s, OD={params.od_mm:g}, THK={params.thickness_mm:g}, R={params
 '''
 
     return GeneratedMiterJointScript(script_name=script_name, source_code=source, warnings=warnings)
+
+
+def _select_cutter_sign(
+    midpoint_p3d: Tuple[float, float, float],
+    plane_point_p3d: Tuple[float, float, float],
+    normal_p3d: Tuple[float, float, float],
+) -> Tuple[float, float]:
+    """side = dot(midpoint - plane_point, normal). The cutter that must
+    remove the excess has to occupy the half-space OPPOSITE the piece's
+    own body (sign = +1 keeps the +normal half-space, sign = -1 the
+    -normal one -- see _cutter_center). Returns (sign, side) so callers
+    can disclose the raw side value too."""
+    side = sum((midpoint_p3d[i] - plane_point_p3d[i]) * normal_p3d[i] for i in range(3))
+    return (1.0 if side < 0 else -1.0), side
+
+
+def generate_single_side_cut_script(
+    params: ElbowParameters,
+    geometry: SegmentedElbowGeometry,
+    script_name: str = DEFAULT_SCRIPT_NAME,
+    invert_cutter: bool = False,
+) -> GeneratedMiterJointScript:
+    """V0.3.1B3C-1R3A -- SINGLE SIDE CUT: only Gajo A (hollow) + one BOX
+    cutter, nothing else.
+
+    V0.3.1B3C-1R2 (visual debug, no cut) was tested on real AutoCAD
+    Plant 3D 2025: GAJO_A, GAJO_B, CUTTER_A and CUTTER_B all executed and
+    stayed visible; the two big cutters sit in opposite half-spaces
+    around the joint and their orientation is consistent with the
+    bisector plane. The one remaining unknown is empirical, not
+    positional: WHICH half-space each cutter actually removes when
+    subtractFrom() runs. R1's full 2-piece cut had made both gajos
+    disappear entirely -- this isolates the question to the smallest
+    possible real test: one gajo, one cutter, one subtractFrom().
+
+    Per the user's explicit instruction: joint_point, plane_normal, the
+    cutter centers and rotateY(45) stay EXACTLY as already computed (no
+    re-derivation, no touching core/geometry/segmented_elbow.py). The
+    only thing this function adds is which SIGN of _cutter_center to use
+    for Gajo A, chosen automatically (never hand-guessed) from
+    side_a = dot(midpoint_gajo_a - joint_point, plane_normal): the cutter
+    used must occupy the half-space OPPOSITE the piece's own body. Set
+    invert_cutter=True to flip that automatic choice for a follow-up
+    "R3A-inverted" run without touching any other number, in case the
+    real test shows Gajo A vanishing under the first choice too.
+
+    No Gajo B, no second cutter, no uniteWith, no calibration box --
+    deliberately the smallest fixture that can still answer:
+    GAJO_A survives? / CUT FACE appears? / CUT FACE passes joint? /
+    CORRECT HALFSPACE removed?
+    """
+    warnings: List[str] = []
+    pieces = geometry.all_pieces
+    if len(pieces) < 4:
+        raise ValueError("Expected at least 4 pieces (2 stubs + >=2 gajos) to pick a representative joint.")
+    gajo_a, gajo_b = pieces[2], pieces[3]
+    if gajo_a.cut_plane_end.point != gajo_b.cut_plane_start.point:
+        raise ValueError("Gajo 2's end plane and Gajo 3's start plane must be the same shared bisector plane.")
+
+    shared_plane = gajo_a.cut_plane_end
+
+    def piece_theta(direction: Tuple[float, float, float]) -> float:
+        dx, dy, dz = direction
+        if abs(dz) > 1e-6:
+            warnings.append(f"direction {direction!r} has a nonzero Z component -- planar-bend assumption violated.")
+        return round(math.degrees(math.atan2(dx, dy)), 6)
+
+    theta_a = piece_theta(gajo_a.direction)
+    theta_cut = piece_theta(shared_plane.normal)
+
+    start_a_p3d = _fmt_vec(_swap_yz(gajo_a.axis_start))
+    plane_point_p3d = _swap_yz(shared_plane.point)
+    normal_p3d = _swap_yz(shared_plane.normal)
+
+    midpoint_a = tuple((gajo_a.axis_start[i] + gajo_a.axis_end[i]) / 2.0 for i in range(3))
+    midpoint_a_p3d = _swap_yz(midpoint_a)
+    base_sign, side_a = _select_cutter_sign(midpoint_a_p3d, plane_point_p3d, normal_p3d)
+    cutter_sign = -base_sign if invert_cutter else base_sign
+
+    cutter_center = _cutter_center(plane_point_p3d, normal_p3d, sign=cutter_sign)
+    cutter_translate = _fmt_vec(tuple(round(c, 6) for c in cutter_center))
+
+    len_a = round(gajo_a.length_mm, 6)
+    overhang_len_a = round(gajo_a.length_mm + 2 * _INNER_CUT_OVERHANG_MM, 6)
+
+    # Single port at Gajo A's own free (outer) end -- the joint end has no
+    # port, there is nothing mating with it in this isolated fixture.
+    p1_pos = _fmt_vec(_swap_yz(gajo_a.axis_start))
+    p1_dir = _fmt_vec(_swap_yz(tuple(-c for c in gajo_a.direction)))
+
+    warnings.append(
+        f"side_a = dot(midpoint_gajo_a - joint_point, plane_normal) = {round(side_a, 6):g} "
+        f"({'negativo' if side_a < 0 else 'positivo'}) -- el cuerpo de Gajo A queda del lado "
+        f"{'negativo' if side_a < 0 else 'positivo'} del plano de junta. El cutter usado ocupa "
+        f"el semiespacio {'positivo' if cutter_sign > 0 else 'negativo'} "
+        f"(sign={cutter_sign:+.1f}{', INVERTIDO respecto del calculo automatico' if invert_cutter else ' -- lado opuesto al cuerpo, calculado automaticamente'})."
+    )
+    warnings.append(
+        "V0.3.1B3C-1R2 real: GAJO_A, GAJO_B, CUTTER_A y CUTTER_B se vieron simultaneamente, "
+        "en semiespacios opuestos, orientacion coherente con el plano bisector. La incertidumbre "
+        "restante es unicamente cual semiespacio elimina realmente cada cutter al ejecutar "
+        "subtractFrom() -- este fixture aisla esa pregunta al minimo: un gajo, un cutter, un corte."
+    )
+    warnings.append(
+        "Fixture MINIMO a proposito: sin Gajo B, sin segundo cutter, sin uniteWith, sin "
+        "calibration box. joint_point, plane_normal, rotateY(45) y el calculo de "
+        "_cutter_center() NO cambiaron respecto de R1/R2 -- solo se decidio automaticamente "
+        "que signo de semiespacio usar para Gajo A."
+    )
+    if not invert_cutter:
+        warnings.append(
+            "Si Gajo A desaparece por completo con este cutter, NO modificar joint_point, "
+            "plane_normal ni core/geometry/segmented_elbow.py -- pedir la variante "
+            "R3A-inverted (generate_single_side_cut_script(..., invert_cutter=True)), que usa "
+            "el cutter del semiespacio contrario sin tocar ningun otro numero."
+        )
+
+    citations_block = "\n".join(f"#   - {url}" for url in SOURCE_CITATIONS)
+
+    source = f'''"""{script_name}.py — V0.3.1B3C-1{"R3A-inverted" if invert_cutter else "R3A"}: SINGLE SIDE CUT, solo Gajo A + un cutter.
+
+V0.3.1B3C-1R2 (visual debug) se probo real: GAJO_A, GAJO_B, CUTTER_A y
+CUTTER_B se vieron simultaneamente en semiespacios opuestos, orientacion
+coherente con el plano bisector. Unica incertidumbre restante: que
+semiespacio elimina realmente cada cutter al ejecutar subtractFrom().
+
+Este fixture es el minimo posible para responder eso: SOLO Gajo A
+(hueco, mismo patron ya confirmado por B3B-1) + UN cutter BOX, un solo
+subtractFrom(). Sin Gajo B, sin segundo cutter, sin uniteWith, sin
+calibration box.
+
+joint_point, plane_normal, rotateY(45) y _cutter_center() NO cambiaron
+respecto de R1/R2. Lo unico nuevo: el signo de semiespacio para el
+cutter de Gajo A se eligio automaticamente a partir de
+side_a = dot(midpoint_gajo_a - joint_point, plane_normal) = {round(side_a, 6):g}
+({"negativo" if side_a < 0 else "positivo"}) -- el cutter debe ocupar el
+semiespacio CONTRARIO al cuerpo del gajo, sign={cutter_sign:+.1f}.
+{"Variante INVERTIDA: usa el signo contrario al calculo automatico (pedida solo si la variante base hizo desaparecer Gajo A)." if invert_cutter else ""}
+
+No se modifico core/geometry/segmented_elbow.py, joint_point ni
+plane_normal. No se avanza a Gajo B ni a B3C-2.
+
+Verificar en Plant 3D:
+  GAJO_A survives?            (deberia sobrevivir, no desaparecer)
+  CUT FACE appears?           (deberia verse una cara de corte nueva)
+  CUT FACE passes joint?      (la cara deberia pasar por el punto de union)
+  CORRECT HALFSPACE removed?  (debe quitar solo la cuna, no toda la pieza)
+
+Golden Case: DN{params.dn_mm:g} {params.pn} {params.angle_deg:g} grados
+  OD={params.od_mm:g} THK={params.thickness_mm:g} R={params.radius_mm:g}
+  LE={params.le_mm:g} Z={geometry.z_mm:g}
+  Pieza probada aqui: Gajo 2 ({gajo_a.angle_deg:g} deg), sin Gajo 3.
+"""
+
+# ---------------------------------------------------------------------------
+# Metadata (ver docs/PLANT3D_CUSTOMSCRIPT.md para el detalle de cada fuente
+# citada):
+{citations_block}
+# ---------------------------------------------------------------------------
+from aqa.math import *
+from varmain.primitiv import *
+from varmain.custom import *
+
+
+@activate(
+    Group="Fitting",
+    TooltipShort="Single side cut (Gajo A) - fixture minimo de diagnostico",
+    TooltipLong="V0.3.1B3C-1{"R3A-inverted" if invert_cutter else "R3A"}: solo Gajo A hueco + un cutter BOX, un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
+    LengthUnit="mm",
+    Ports=1,
+)
+@group("MainDimensions")
+@param(OD=LENGTH, TooltipShort="Diametro exterior", TooltipLong="OD (mm) - Golden Case: {params.od_mm:g}", Ask4Dist=True)
+@param(THK=LENGTH, TooltipShort="Espesor de pared", TooltipLong="Espesor (mm) - Golden Case: {params.thickness_mm:g}. ID = OD - 2*THK.")
+@param(R=LENGTH, TooltipShort="Radio de curvatura (posiciones ya horneadas)", TooltipLong="R (mm) - Golden Case: {params.radius_mm:g}. Cambiar este valor en vivo NO recalcula la geometria.")
+@param(LE=LENGTH, TooltipShort="Longitud tangente (no usada en este fixture)", TooltipLong="Le (mm) - Golden Case: {params.le_mm:g}. Este fixture no incluye los tramos Le.")
+@param(Z=LENGTH, TooltipShort="Distancia vertice-cara (posiciones ya horneadas)", TooltipLong="Z (mm) - Golden Case: {geometry.z_mm:g}.")
+def {script_name}(s, OD={params.od_mm:g}, THK={params.thickness_mm:g}, R={params.radius_mm:g}, LE={params.le_mm:g}, Z={geometry.z_mm:g}, OF=-1, K=1, **kw):
+    """SINGLE_SIDE_CUT -- solo Gajo A hueco + un cutter BOX, un solo subtractFrom.
+
+    NO representa el codo completo ni siquiera una junta a inglete
+    completa -- es el fixture minimo para verificar que semiespacio
+    elimina realmente un cutter BOX. Ver docs/PLANT3D_CUSTOMSCRIPT.md,
+    seccion V0.3.1.
+    """
+    radio_ext_mm = OD / 2.0
+    radio_int_mm = (OD - 2 * THK) / 2.0
+
+    # Gajo A (hueco) -- taladro interior ya confirmado en real por B3B-1.
+    ext_a = CYLINDER(s, R=radio_ext_mm, H={len_a:.6g}, O=0.0).rotateY({theta_a:.6g}).translate({start_a_p3d})
+    int_a = CYLINDER(s, R=radio_int_mm, H={overhang_len_a:.6g}, O=-{_INNER_CUT_OVERHANG_MM:g}).rotateY({theta_a:.6g}).translate({start_a_p3d})
+    ext_a.subtractFrom(int_a)
+    int_a.erase()
+
+    # Un solo cutter -- mismo joint_point/plane_normal/rotateY(45) que R1/R2,
+    # semiespacio elegido automaticamente (side_a={round(side_a, 6):g}, sign={cutter_sign:+.1f}).
+    cutter_a = BOX(s, L={_CUTTER_L_MM:g}, W={_CUTTER_W_MM:g}, H={_CUTTER_H_MM:g}).rotateY({theta_cut:.6g}).translate({cutter_translate})
+    ext_a.subtractFrom(cutter_a)
+    cutter_a.erase()
+
+    s.setPoint({p1_pos}, {p1_dir}, 0.0)
+'''
+
+    return GeneratedMiterJointScript(script_name=script_name, source_code=source, warnings=warnings)

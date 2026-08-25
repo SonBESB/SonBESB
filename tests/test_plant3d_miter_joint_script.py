@@ -18,6 +18,7 @@ from plant3d.generators.miter_joint_script_generator import (
     SOURCE_CITATIONS,
     generate_debug_cutters_script,
     generate_single_miter_joint_script,
+    generate_single_side_cut_script,
 )
 from tests.golden_cases import GOLDEN_CASE_DN110_PN10_90
 
@@ -383,5 +384,142 @@ def test_debug_script_cites_sources(golden):
 def test_debug_script_never_touches_proprietary_plant_files(golden):
     params, geometry = golden
     result = generate_debug_cutters_script(params, geometry)
+    for forbidden in (".pcat", ".pspx", ".pspc"):
+        assert forbidden not in result.source_code
+
+
+# --- V0.3.1B3C-1R3A: SINGLE SIDE CUT (Gajo A + one cutter, one subtractFrom) --
+
+
+def test_side_cut_script_is_syntactically_valid_python(golden):
+    params, geometry = golden
+    result = generate_single_side_cut_script(params, geometry)
+    ast.parse(result.source_code)
+
+
+def test_side_cut_script_is_deterministic(golden):
+    params, geometry = golden
+    first = generate_single_side_cut_script(params, geometry)
+    second = generate_single_side_cut_script(params, geometry)
+    assert first.source_code == second.source_code
+
+
+def test_side_cut_inverted_is_syntactically_valid_and_deterministic(golden):
+    params, geometry = golden
+    first = generate_single_side_cut_script(params, geometry, invert_cutter=True)
+    second = generate_single_side_cut_script(params, geometry, invert_cutter=True)
+    ast.parse(first.source_code)
+    assert first.source_code == second.source_code
+
+
+def test_side_cut_entry_point_matches_script_name(golden):
+    params, geometry = golden
+    result = generate_single_side_cut_script(params, geometry)
+    assert "def HDPE_SEGMENTED_ELBOW(s, OD=" in result.source_code
+
+
+def test_side_cut_builds_only_gajo_a_hollow_no_gajo_b(golden):
+    params, geometry = golden
+    result = generate_single_side_cut_script(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert "ext_a = CYLINDER(s, R=radio_ext_mm," in body
+    assert "int_a = CYLINDER(s, R=radio_int_mm," in body
+    assert "ext_a.subtractFrom(int_a)" in body
+    assert "int_a.erase()" in body
+    assert "ext_b" not in body
+    assert "int_b" not in body
+    assert body.count("CYLINDER(") == 2
+
+
+def test_side_cut_uses_exactly_one_cutter_and_one_subtract(golden):
+    params, geometry = golden
+    result = generate_single_side_cut_script(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert body.count("BOX(") == 1
+    assert "cutter_b" not in body
+    assert body.count("subtractFrom(cutter_a)") == 1
+    assert "cutter_a.erase()" in body
+    assert "uniteWith" not in body
+    assert "CALIBRATION_BOX_TEMPORARY" not in result.source_code
+    assert "calibration_box" not in result.source_code
+
+
+def test_side_cut_cutter_matches_r1_r2_cutter_a_position(golden):
+    """The automatically-selected half-space happens to match R1/R2's
+    cutter_a exactly for this golden case (verified independently by
+    hand) -- same joint_point/plane_normal/rotateY(45), only Gajo B and
+    cutter_b are dropped."""
+    params, geometry = golden
+    side_cut = generate_single_side_cut_script(params, geometry)
+    real_r1 = generate_single_miter_joint_script(params, geometry)
+
+    def cutter_lines(source: str):
+        return [line.strip() for line in source.splitlines() if line.strip().startswith("cutter_a = BOX(")]
+
+    assert cutter_lines(side_cut.source_code) == cutter_lines(real_r1.source_code)
+
+
+def test_side_cut_inverted_uses_the_opposite_cutter_center(golden):
+    params, geometry = golden
+    base = generate_single_side_cut_script(params, geometry)
+    inverted = generate_single_side_cut_script(params, geometry, invert_cutter=True)
+
+    def cutter_lines(source: str):
+        return [line.strip() for line in source.splitlines() if line.strip().startswith("cutter_a = BOX(")]
+
+    assert cutter_lines(base.source_code) != cutter_lines(inverted.source_code)
+
+
+def test_side_cut_ports_is_one_with_a_single_setpoint_at_the_free_end(golden):
+    params, geometry = golden
+    result = generate_single_side_cut_script(params, geometry)
+    gajo_a = geometry.all_pieces[2]
+
+    def fmt(v):
+        return "(" + ", ".join(f"{round(c, 6):.6g}" for c in v) + ")"
+
+    p1_pos = fmt((gajo_a.axis_start[0], gajo_a.axis_start[2], gajo_a.axis_start[1]))
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert "Ports=1," in result.source_code
+    assert body.count("s.setPoint(") == 1
+    assert f"s.setPoint({p1_pos}," in body
+
+
+def test_side_cut_reports_side_a_sign_and_cutter_selection(golden):
+    params, geometry = golden
+    result = generate_single_side_cut_script(params, geometry)
+    assert any("side_a = dot(midpoint_gajo_a - joint_point, plane_normal)" in w for w in result.warnings)
+    assert any("semiespacio" in w and "opuesto al cuerpo" in w for w in result.warnings)
+    assert "side_a = dot(midpoint_gajo_a - joint_point, plane_normal)" in result.source_code
+
+
+def test_side_cut_warns_about_the_inverted_fallback_only_when_not_inverted(golden):
+    params, geometry = golden
+    base = generate_single_side_cut_script(params, geometry)
+    inverted = generate_single_side_cut_script(params, geometry, invert_cutter=True)
+    assert any("R3A-inverted" in w for w in base.warnings)
+    assert not any("pedir la variante" in w for w in inverted.warnings)
+
+
+def test_side_cut_does_not_modify_joint_point_or_plane_normal(golden):
+    """Sanity guard: the shared plane used here must be byte-identical to
+    the one core/geometry/segmented_elbow.py already computed for R1/R2 --
+    this generator must never re-derive it."""
+    params, geometry = golden
+    gajo_a, gajo_b = geometry.all_pieces[2], geometry.all_pieces[3]
+    assert gajo_a.cut_plane_end.point == gajo_b.cut_plane_start.point
+    assert gajo_a.cut_plane_end.normal == gajo_b.cut_plane_start.normal
+
+
+def test_side_cut_cites_sources(golden):
+    params, geometry = golden
+    result = generate_single_side_cut_script(params, geometry)
+    for citation in SOURCE_CITATIONS:
+        assert citation in result.source_code
+
+
+def test_side_cut_never_touches_proprietary_plant_files(golden):
+    params, geometry = golden
+    result = generate_single_side_cut_script(params, geometry)
     for forbidden in (".pcat", ".pspx", ".pspc"):
         assert forbidden not in result.source_code

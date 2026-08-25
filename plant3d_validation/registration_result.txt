@@ -718,3 +718,53 @@ mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
 
 No se debe proponer una nueva formula de corte hasta ver el resultado
 real de este diagnostico visual.
+
+===================================================================
+RESULTADO REAL V0.3.1B3C-1R2 -- CUTTER VISUAL DEBUG -- PASS -- 2026-08-25
+===================================================================
+
+Probado en AutoCAD Plant 3D 2025 real. El fixture ejecuto correctamente.
+Se observaron simultaneamente: Gajo A, Gajo B, Cutter A, Cutter B,
+calibration box. Los dos cutters grandes aparecen en semiespacios
+opuestos respecto de la zona de junta, con orientacion general coherente
+con el plano bisector.
+
+Incertidumbre restante, segun el usuario: exclusivamente que semiespacio
+elimina realmente cada cutter respecto de cada gajo al ejecutar
+subtractFrom() (posicion/orientacion ya confirmadas visualmente).
+
+===================================================================
+Actualizacion V0.3.1B3C-1R3A -- SINGLE SIDE CUT (aun sin probar en real) -- 2026-08-25
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B3C-1R3A
+(generate_single_side_cut_script() en
+plant3d/generators/miter_joint_script_generator.py): fixture MINIMO --
+solo Gajo A hueco (mismo patron B3B-1) + UN cutter BOX + UN
+subtractFrom(). Sin Gajo B, sin segundo cutter, sin uniteWith, sin
+calibration box. Ports=1 con un solo s.setPoint() en el extremo libre
+de Gajo A.
+
+joint_point, plane_normal, cutter centers y rotateY(45) NO cambiaron
+respecto de R1/R2 (mismos numeros exactos). Lo unico nuevo: el signo de
+semiespacio del cutter para Gajo A se eligio automaticamente (no a
+mano) a partir de:
+
+  side_a = dot(midpoint_gajo_a - joint_point, plane_normal) = -41.25 (negativo)
+
+El cutter usado debe ocupar el semiespacio CONTRARIO al cuerpo del gajo
+-> sign=+1.0, que coincide exactamente con el cutter_a ya usado en
+R1/R2 (verificado independientemente).
+
+Si Gajo A sobrevive al corte real, se compara contra: GAJO_A survives?,
+CUT FACE appears?, CUT FACE passes joint?, CORRECT HALFSPACE removed?
+Si Gajo A desaparece por completo, la siguiente accion (sin tocar
+joint_point/plane_normal/segmented_elbow.py) es generar la variante
+R3A-inverted (generate_single_side_cut_script(..., invert_cutter=True)),
+que usa el cutter del semiespacio contrario.
+
+No se modifico core/geometry/segmented_elbow.py, joint_point ni
+plane_normal. No se avanza a Gajo B ni a B3C-2.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
