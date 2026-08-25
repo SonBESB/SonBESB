@@ -1,17 +1,22 @@
-"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B1: VALIDATION_GEOMETRY_ONLY, sin puertos todavia.
+"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B2: VALIDATION_GEOMETRY_ONLY, con 2 puertos.
 
-Etapa siguiente a V0.3.1A (que ya probo CYLINDER(...).rotateY(...) + 2
-puertos via s.setPoint(...)). Esta version quita TODO lo demas para
-aislar una sola pregunta: puede nuestra propia familia
-(HDPE_SEGMENTED_ELBOW, mismo nombre de archivo y de rutina) ejecutarse
-bajo el lookup de componentes/familias de Plant 3D. NO agrega puertos,
-NO usa THK/R/Z/PN/SDR, NO es geometria segmentada, NO toca Catalog
-Builder/Spec Editor/EndType. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion
-V0.3.1, para el plan completo (V0.3.1B1 -> B2 -> B3, sin saltar etapas).
+V0.3.1B1 (mismo CYLINDER(...).rotateY(...), Ports=1, sin setPoint) fue
+PROBADO REAL en AutoCAD Plant 3D 2025 y devolvio <Entity name: ...> con
+un cilindro visible OD=110/L=150 (ver
+plant3d_validation/registration_result.txt): CYLINDER_API, ROTATEY_API,
+GEOMETRY_CREATION y TESTACPSCRIPT_ENTITY_RETURN = PASS.
+
+Esta version agrega EXACTAMENTE dos cosas sobre B1: Ports=2 y dos
+llamadas s.setPoint(...) (P1 en el origen mirando -X, P2 en (LE,0,0)
+mirando +X) -- la misma forma de llamada (posicion, direccion, 0.0) ya
+confirmada desde V0.3.1A. Sigue sin THK/R/Z/PN/SDR/EndType/ButtFusion/
+geometria segmentada -- eso empieza en V0.3.1B3. Ver
+docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1, para el plan completo.
 
 Prueba real siguiente:
     (testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")
-Resultado esperado: un cilindro OD=110mm x L=150mm.
+Resultado esperado: el mismo <Entity name: ...> y cilindro visible de
+B1, ahora con P1/P2 tambien definidos.
 """
 
 # ---------------------------------------------------------------------------
@@ -38,9 +43,9 @@ from varmain.custom import *
 @activate(
     Group="Support",
     TooltipShort="HDPE Segmented Elbow Validation",
-    TooltipLong="Temporary validation geometry",
+    TooltipLong="Temporary validation geometry with two ports",
     LengthUnit="mm",
-    Ports=1,
+    Ports=2,
 )
 @group("MainDimensions")
 @param(
@@ -60,12 +65,12 @@ def HDPE_SEGMENTED_ELBOW(
     K=1,
     **kw
 ):
-    """VALIDATION_GEOMETRY_ONLY -- sin puertos, sin THK/R/Z, NO el codo DIN 16963.
+    """VALIDATION_GEOMETRY_ONLY -- mismo cilindro de B1 (PASS real), ahora con P1/P2.
 
     OF/K se reciben (misma forma que el ejemplo real citado
     literalmente, ver SOURCE_CITATIONS arriba) pero no se usan todavia.
-    Unico objetivo: confirmar que esta familia ejecuta bajo Plant 3D
-    real antes de reintroducir puertos (V0.3.1B2).
+    Unico objetivo de B2: confirmar Ports=2 + s.setPoint(...) sin tocar
+    la geometria ya validada en real por B1.
     """
     CYLINDER(
         s,
@@ -73,3 +78,15 @@ def HDPE_SEGMENTED_ELBOW(
         H=LE,
         O=0.0,
     ).rotateY(90)
+
+    s.setPoint(
+        (0.0, 0.0, 0.0),
+        (-1.0, 0.0, 0.0),
+        0.0,
+    )
+
+    s.setPoint(
+        (LE, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        0.0,
+    )

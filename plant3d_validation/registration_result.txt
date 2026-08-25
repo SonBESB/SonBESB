@@ -142,3 +142,74 @@ PLANTREGISTERCUSTOMSCRIPTS, cerrar y reabrir Plant 3D,
 registrar el resultado real (objeto visible o no) en una nueva entrada
 fechada a continuacion de esta. Si el cilindro aparece, avanzar a
 V0.3.1B2 (no antes).
+
+===================================================================
+V0.3.1B1 VALIDADO EN AUTOCAD PLANT 3D 2025 REAL -- 2026-08-24
+===================================================================
+
+Comando ejecutado:
+  (testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")
+
+Resultado real:
+  <Entity name: ...>
+
+Genero correctamente un cilindro visible de aproximadamente OD=110 mm y
+LE=150 mm.
+
+  V0.3.1B1                      = PASS
+  HDPE_ENTRY_POINT               = PASS
+  PARAMETER_PASSING              = PASS
+  CYLINDER_API                   = PASS
+  ROTATEY_API                    = PASS
+  GEOMETRY_CREATION               = PASS
+  TESTACPSCRIPT_ENTITY_RETURN    = PASS
+
+Esta es la PRIMERA evidencia real de que el entorno completo (script
+propio + entry point propio + CYLINDER(...).rotateY(...) confirmados en
+V0.3.1 + PLANTREGISTERCUSTOMSCRIPTS + PnP3dACPAdapter + TESTACPSCRIPT)
+funciona de punta a punta en AutoCAD Plant 3D 2025 real. El entorno
+Plant 3D 2025 queda validado para esta cadena de llamadas especifica
+(CYLINDER + rotateY, sin puertos todavia).
+
+Estado global: PLANT3D_VALIDATION_IN_PROGRESS -- NO PLANT3D_VALIDATED
+(esto confirma la geometria base, no confirma puertos ni el codo real
+todavia -- ver V0.3.1B2/B3 mas abajo).
+
+Siguiente paso: probar V0.3.1B2 (mismo cilindro + Ports=2 +
+s.setPoint(P1)/s.setPoint(P2)) en el mismo entorno y registrar el
+resultado real en una nueva entrada fechada a continuacion de esta.
+
+===================================================================
+Actualizacion V0.3.1B2 (aun sin probar en real) -- 2026-08-24
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B2
+(generate_validation_script_b2() en
+plant3d/generators/validation_script_generator.py): EXACTAMENTE la
+misma geometria de B1 (ya PASS real, ver entrada anterior), cambiando
+solo Ports=1 -> Ports=2 y agregando dos s.setPoint(...) con la forma ya
+confirmada desde V0.3.1A (posicion, direccion, 0.0):
+
+  P1 = setPoint((0,0,0), (-1,0,0), 0.0)
+  P2 = setPoint((LE,0,0), (1,0,0), 0.0)
+
+Ninguna API nueva sin confirmar: Ports=N y la forma de s.setPoint ya
+estaban confirmadas; CYLINDER/rotateY ya tienen confirmacion de
+hardware real desde B1. Sigue sin THK/R/Z/PN/SDR/EndType/ButtFusion/
+geometria segmentada -- eso empieza en V0.3.1B3.
+
+Prueba real pendiente:
+  (testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")
+Resultado esperado: el mismo <Entity name: ...> y cilindro visible de
+B1, ahora con P1/P2 tambien definidos.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+Siguiente paso: reemplazar el .py en CustomScripts,
+PLANTREGISTERCUSTOMSCRIPTS, cerrar y reabrir Plant 3D,
+(arxload "PnP3dACPAdapter"),
+(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150"), y
+registrar el resultado real en una nueva entrada fechada a continuacion
+de esta. Si pasa, avanzar a V0.3.1B3 (geometria real del codo, no
+antes).

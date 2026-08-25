@@ -15,6 +15,7 @@ from plant3d.generators.validation_script_generator import (
     SOURCE_CITATIONS,
     generate_validation_script,
     generate_validation_script_b1,
+    generate_validation_script_b2,
 )
 
 
@@ -185,5 +186,86 @@ def test_b1_cites_sources_including_ask4dist_and_testscript_signature():
 
 def test_b1_never_touches_proprietary_plant_files():
     result = generate_validation_script_b1()
+    for forbidden in (".pcat", ".pspx", ".pspc"):
+        assert forbidden not in result.source_code
+
+
+# --- V0.3.1B2: same B1 geometry (real PASS), now with 2 ports ------------
+
+
+def test_b2_is_syntactically_valid_python():
+    result = generate_validation_script_b2()
+    ast.parse(result.source_code)
+
+
+def test_b2_is_deterministic():
+    first = generate_validation_script_b2()
+    second = generate_validation_script_b2()
+    assert first.source_code == second.source_code
+
+
+def test_b2_entry_point_matches_script_name():
+    result = generate_validation_script_b2()
+    assert result.script_name == DEFAULT_SCRIPT_NAME
+    assert f"def {DEFAULT_SCRIPT_NAME}(" in result.source_code
+
+
+def test_b2_keeps_the_same_cylinder_call_as_b1():
+    """B2 must not touch the geometry B1 already validated for real on
+    Plant 3D 2025 -- only Ports and setPoint change."""
+    b1 = generate_validation_script_b1()
+    b2 = generate_validation_script_b2()
+    b1_body = b1.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    b2_body = b2.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    for line in ("R=OD / 2.0", "H=LE", "O=0.0", ".rotateY(90)"):
+        assert line in b1_body
+        assert line in b2_body
+
+
+def test_b2_declares_two_ports_and_calls_setpoint_twice():
+    """The narrative header docstring legitimately mentions B1's
+    'Ports=1' in prose (explaining what changed) — check the actual
+    @activate(...) metadata block instead of the whole file."""
+    result = generate_validation_script_b2()
+    metadata = result.source_code.split("@activate(")[1].split("def ")[0]
+    assert "Ports=2" in metadata
+    assert "Ports=1" not in metadata
+    # Split past the function's own docstring (which mentions
+    # "s.setPoint(...)" once in prose) to count only the actual calls.
+    code_body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1].split('"""')[-1]
+    assert code_body.count("s.setPoint(\n") == 2
+    assert "(0.0, 0.0, 0.0)" in code_body
+    assert "(-1.0, 0.0, 0.0)" in code_body
+    assert "(1.0, 0.0, 0.0)" in code_body
+
+
+def test_b2_still_omits_thk_r_z_pn_sdr_and_end_type():
+    """The narrative header legitimately lists 'EndType/ButtFusion' in
+    prose (what's still deferred to B3) — check metadata + body only."""
+    result = generate_validation_script_b2()
+    assert "@param(THK" not in result.source_code
+    assert "@param(R" not in result.source_code
+    assert "@param(Z" not in result.source_code
+    metadata_and_body = result.source_code.split("@activate(")[1]
+    assert "EndType" not in metadata_and_body
+    assert "ButtFusion" not in metadata_and_body
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "PN" not in body
+    assert "SDR" not in body
+
+
+def test_b2_is_clearly_marked_not_the_real_elbow():
+    result = generate_validation_script_b2()
+    assert "VALIDATION_GEOMETRY_ONLY" in result.source_code
+
+
+def test_b2_cites_sources():
+    result = generate_validation_script_b2()
+    for citation in SOURCE_CITATIONS:
+        assert citation in result.source_code
+
+
+def test_b2_never_touches_proprietary_plant_files():
+    result = generate_validation_script_b2()
     for forbidden in (".pcat", ".pspx", ".pspc"):
         assert forbidden not in result.source_code

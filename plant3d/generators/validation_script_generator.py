@@ -312,3 +312,136 @@ def {script_name}(
     ]
 
     return GeneratedValidationScript(script_name=script_name, source_code=source, warnings=warnings)
+
+
+def generate_validation_script_b2(script_name: str = DEFAULT_SCRIPT_NAME) -> GeneratedValidationScript:
+    """V0.3.1B2: same B1 geometry, now with Ports=2 and two s.setPoint(...).
+
+    V0.3.1B1 was tested for real on AutoCAD Plant 3D 2025 (see
+    plant3d_validation/registration_result.txt) and returned
+    `<Entity name: ...>` with a visible OD=110/L=150 cylinder:
+
+        V0.3.1B1 = PASS
+        HDPE_ENTRY_POINT = PASS
+        PARAMETER_PASSING = PASS
+        CYLINDER_API = PASS
+        ROTATEY_API = PASS
+        GEOMETRY_CREATION = PASS
+        TESTACPSCRIPT_ENTITY_RETURN = PASS
+
+    This confirms CYLINDER(s, R=, H=, O=).rotateY(...) works end to end
+    in this real Plant 3D 2025 install, so B2 changes nothing about that
+    call. It changes exactly two things, per the user's explicit staged
+    plan (no skipping to the real elbow yet):
+
+      1. Ports=1 -> Ports=2 in @activate.
+      2. Two s.setPoint(...) calls added, in the exact form already
+         confirmed by the literal TESTSCRIPT2 example used since
+         V0.3.1A (position, direction, 0.0) -- P1 at the origin facing
+         -X, P2 at (LE, 0, 0) facing +X, matching the cylinder's own
+         extent along X after .rotateY(90).
+
+    No new, previously-unconfirmed Plant 3D API surface is introduced
+    here: both setPoint's call shape and Ports=N were already confirmed
+    sources (see SOURCE_CITATIONS), and CYLINDER/rotateY now also carry
+    real-hardware confirmation from B1. Still explicitly
+    VALIDATION_GEOMETRY_ONLY -- not the codo. THK/R/Z/PN/SDR/EndType/
+    ButtFusion/segmented geometry are still absent on purpose; those
+    start only in V0.3.1B3.
+    """
+    citations_block = "\n".join(f"#   - {url}" for url in SOURCE_CITATIONS)
+
+    source = f'''"""{script_name}.py — V0.3.1B2: VALIDATION_GEOMETRY_ONLY, con 2 puertos.
+
+V0.3.1B1 (mismo CYLINDER(...).rotateY(...), Ports=1, sin setPoint) fue
+PROBADO REAL en AutoCAD Plant 3D 2025 y devolvio <Entity name: ...> con
+un cilindro visible OD=110/L=150 (ver
+plant3d_validation/registration_result.txt): CYLINDER_API, ROTATEY_API,
+GEOMETRY_CREATION y TESTACPSCRIPT_ENTITY_RETURN = PASS.
+
+Esta version agrega EXACTAMENTE dos cosas sobre B1: Ports=2 y dos
+llamadas s.setPoint(...) (P1 en el origen mirando -X, P2 en (LE,0,0)
+mirando +X) -- la misma forma de llamada (posicion, direccion, 0.0) ya
+confirmada desde V0.3.1A. Sigue sin THK/R/Z/PN/SDR/EndType/ButtFusion/
+geometria segmentada -- eso empieza en V0.3.1B3. Ver
+docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1, para el plan completo.
+
+Prueba real siguiente:
+    (testacpscript "{script_name}" "OD" "110" "LE" "150")
+Resultado esperado: el mismo <Entity name: ...> y cilindro visible de
+B1, ahora con P1/P2 tambien definidos.
+"""
+
+# ---------------------------------------------------------------------------
+# Metadata (ver docs/PLANT3D_CUSTOMSCRIPT.md para el detalle de cada
+# fuente citada):
+{citations_block}
+# ---------------------------------------------------------------------------
+from aqa.math import *
+from varmain.primitiv import *
+from varmain.custom import *
+
+
+@activate(
+    Group="Support",
+    TooltipShort="HDPE Segmented Elbow Validation",
+    TooltipLong="Temporary validation geometry with two ports",
+    LengthUnit="mm",
+    Ports=2,
+)
+@group("MainDimensions")
+@param(
+    OD=LENGTH,
+    TooltipShort="Outside Diameter",
+    Ask4Dist=True,
+)
+@param(
+    LE=LENGTH,
+    TooltipLong="Validation Length",
+)
+def {script_name}(
+    s,
+    OD=110.0,
+    LE=150.0,
+    OF=-1,
+    K=1,
+    **kw
+):
+    """VALIDATION_GEOMETRY_ONLY -- mismo cilindro de B1 (PASS real), ahora con P1/P2.
+
+    OF/K se reciben (misma forma que el ejemplo real citado
+    literalmente, ver SOURCE_CITATIONS arriba) pero no se usan todavia.
+    Unico objetivo de B2: confirmar Ports=2 + s.setPoint(...) sin tocar
+    la geometria ya validada en real por B1.
+    """
+    CYLINDER(
+        s,
+        R=OD / 2.0,
+        H=LE,
+        O=0.0,
+    ).rotateY(90)
+
+    s.setPoint(
+        (0.0, 0.0, 0.0),
+        (-1.0, 0.0, 0.0),
+        0.0,
+    )
+
+    s.setPoint(
+        (LE, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        0.0,
+    )
+'''
+
+    warnings = [
+        "V0.3.1B2 agrega Ports=2 + 2x s.setPoint(...) sobre la geometria de B1 "
+        "(PASS real en Plant 3D 2025) sin modificarla -- ver "
+        "docs/PLANT3D_CUSTOMSCRIPT.md seccion V0.3.1.",
+        "No se introduce API nueva sin confirmar: Ports=N y la forma de "
+        "s.setPoint(posicion, direccion, 0.0) ya estaban confirmadas desde "
+        "V0.3.1A; CYLINDER/rotateY ya tienen confirmacion de hardware real "
+        "desde B1.",
+    ]
+
+    return GeneratedValidationScript(script_name=script_name, source_code=source, warnings=warnings)

@@ -298,11 +298,61 @@ gajos 15°-30°-30°-15°). Sin saltar etapas.
 Generador cubierto por las pruebas `test_b1_*` en
 `tests/test_plant3d_validation_script.py`.
 
+### V0.3.1B1 — VALIDADO EN AUTOCAD PLANT 3D 2025 REAL
+
+```text
+(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")
+-> <Entity name: ...>  (cilindro visible OD=110mm x L=150mm)
+
+V0.3.1B1                    = PASS
+HDPE_ENTRY_POINT            = PASS
+PARAMETER_PASSING           = PASS
+CYLINDER_API                = PASS
+ROTATEY_API                 = PASS
+GEOMETRY_CREATION           = PASS
+TESTACPSCRIPT_ENTITY_RETURN = PASS
+```
+
+Evidencia completa en `plant3d_validation/registration_result.txt`.
+Esta es la primera confirmacion real de que la cadena completa (entry
+point propio + `CYLINDER(...).rotateY(...)` + `PLANTREGISTERCUSTOMSCRIPTS`
++ `PnP3dACPAdapter` + `TESTACPSCRIPT`) funciona de punta a punta en Plant
+3D 2025 — para esta geometria minima, todavia sin puertos. El estado
+global sigue en `PLANT3D_VALIDATION_IN_PROGRESS` (esto confirma
+geometria base, no confirma puertos ni el codo real).
+
+### V0.3.1B2 — agrega Ports=2 + s.setPoint(...), sin tocar la geometria de B1
+
+`generate_validation_script_b2()` cambia EXACTAMENTE dos cosas sobre la
+version de B1 ya validada en real:
+
+```python
+Ports=1  ->  Ports=2
+
+# + dos llamadas nuevas, con la misma forma ya confirmada desde V0.3.1A
+# (posicion, direccion, 0.0):
+s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)   # P1
+s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)     # P2
+```
+
+El `CYLINDER(s, R=OD/2.0, H=LE, O=0.0).rotateY(90)` de B1 no se toca —
+B2 no introduce ninguna API nueva sin confirmar: `Ports=N` y la forma de
+`s.setPoint(...)` ya estaban confirmadas desde V0.3.1A, y `CYLINDER`/
+`rotateY` ya tienen confirmacion de hardware real desde B1. Sigue sin
+`THK`/`R`/`Z`/`PN`/`SDR`/`EndType`/`ButtFusion`/geometria segmentada —
+eso empieza recien en V0.3.1B3. Generador cubierto por las pruebas
+`test_b2_*` en `tests/test_plant3d_validation_script.py`.
+
 ### Siguiente paso
 
-Probar V0.3.1B1 en el mismo entorno (Plant 3D 2025) y registrar el
-resultado real en una nueva entrada de
-`plant3d_validation/registration_result.txt`. La version con puertos de
-V0.3.1A (`generate_validation_script()`, aun no probada en real) queda
-disponible en el generador para retomarse mas adelante si hiciera falta
-un punto de comparacion.
+Probar V0.3.1B2 en el mismo entorno (Plant 3D 2025):
+`(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")`, esperando
+el mismo `<Entity name: ...>` y cilindro visible de B1, ahora con P1/P2
+tambien definidos. Registrar el resultado real en una nueva entrada de
+`plant3d_validation/registration_result.txt`. Solo si B2 pasa se avanza
+a V0.3.1B3 (geometria real del codo DN110/PN10/90°, 4 gajos
+15°-30°-30°-15°, con el mapeo P1/P2 real vía
+`plant3d/generators/port_mapping.py`) — sin saltar etapas. La version
+con puertos de V0.3.1A (`generate_validation_script()`, aun no probada
+en real) sigue disponible en el generador por si hiciera falta un punto
+de comparacion.
