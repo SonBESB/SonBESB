@@ -16,6 +16,7 @@ from core.geometry.segmented_elbow import build_segmented_elbow_geometry
 from data.repository import ElbowRepository
 from plant3d.generators.miter_joint_script_generator import (
     SOURCE_CITATIONS,
+    generate_debug_cutters_script,
     generate_single_miter_joint_script,
 )
 from tests.golden_cases import GOLDEN_CASE_DN110_PN10_90
@@ -247,5 +248,140 @@ def test_cites_sources(golden):
 def test_never_touches_proprietary_plant_files(golden):
     params, geometry = golden
     result = generate_single_miter_joint_script(params, geometry)
+    for forbidden in (".pcat", ".pspx", ".pspc"):
+        assert forbidden not in result.source_code
+
+
+# --- V0.3.1B3C-1R2: CUTTER VISUAL DEBUG (no cut, all 4 objects visible) ----
+
+
+def test_debug_script_is_syntactically_valid_python(golden):
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    ast.parse(result.source_code)
+
+
+def test_debug_script_is_deterministic(golden):
+    params, geometry = golden
+    first = generate_debug_cutters_script(params, geometry)
+    second = generate_debug_cutters_script(params, geometry)
+    assert first.source_code == second.source_code
+
+
+def test_debug_script_entry_point_matches_script_name(golden):
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    assert "def HDPE_SEGMENTED_ELBOW(s, OD=" in result.source_code
+
+
+def test_debug_toggle_defaults_to_true(golden):
+    """R2 must ship with DEBUG_CUTTERS = True (cutters visible, no cut)."""
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert "DEBUG_CUTTERS = True" in body
+
+
+def test_debug_toggle_true_branch_never_touches_the_cutters(golden):
+    """Under DEBUG_CUTTERS = True the executed branch must be a bare
+    'pass' -- no subtractFrom/erase/uniteWith on cutter_a/cutter_b."""
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    if_block = body.split("if DEBUG_CUTTERS:")[1].split("else:")[0]
+    assert "pass" in if_block
+    assert "subtractFrom" not in if_block
+    assert "erase" not in if_block
+    assert "uniteWith" not in if_block
+
+
+def test_debug_toggle_false_branch_reproduces_r1_real_cut_behavior(golden):
+    """The else branch (DEBUG_CUTTERS = False) is the exact R1 real-tested
+    cut sequence -- kept so flipping the flag locally reproduces R1
+    without regenerating the script."""
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    else_block = body.split("else:")[1].split("s.setPoint(")[0]
+    assert "ext_a.subtractFrom(cutter_a)" in else_block
+    assert "cutter_a.erase()" in else_block
+    assert "ext_b.subtractFrom(cutter_b)" in else_block
+    assert "cutter_b.erase()" in else_block
+    assert "ext_a.uniteWith(ext_b)" in else_block
+    assert "ext_b.erase()" in else_block
+
+
+def test_debug_script_keeps_the_already_confirmed_inner_bore_hollowing(golden):
+    """B3B-1's real-hardware-confirmed hollow pattern is unrelated risk
+    and must stay, independent of the DEBUG_CUTTERS toggle."""
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert "ext_a = CYLINDER(s, R=radio_ext_mm," in body
+    assert "int_a = CYLINDER(s, R=radio_int_mm," in body
+    assert "ext_a.subtractFrom(int_a)" in body
+    assert "int_a.erase()" in body
+    assert "ext_b = CYLINDER(s, R=radio_ext_mm," in body
+    assert "int_b = CYLINDER(s, R=radio_int_mm," in body
+    assert "ext_b.subtractFrom(int_b)" in body
+    assert "int_b.erase()" in body
+
+
+def test_debug_script_builds_both_cutters_at_the_same_r1_centers(golden):
+    """No position/rotation number changes vs R1 -- only whether the
+    cutters are consumed."""
+    debug_params, debug_geometry = golden
+    debug_result = generate_debug_cutters_script(debug_params, debug_geometry)
+    real_result = generate_single_miter_joint_script(debug_params, debug_geometry)
+
+    def cutter_lines(source: str):
+        return [line.strip() for line in source.splitlines() if line.strip().startswith("cutter_")]
+
+    debug_cutters = [line for line in cutter_lines(debug_result.source_code) if "= BOX(" in line]
+    real_cutters = [line for line in cutter_lines(real_result.source_code) if "= BOX(" in line]
+    assert debug_cutters == real_cutters
+
+
+def test_debug_script_ports_unchanged_from_r1(golden):
+    params, geometry = golden
+    debug_result = generate_debug_cutters_script(params, geometry)
+    real_result = generate_single_miter_joint_script(params, geometry)
+
+    def port_lines(source: str):
+        return [line.strip() for line in source.splitlines() if line.strip().startswith("s.setPoint(")]
+
+    assert port_lines(debug_result.source_code) == port_lines(real_result.source_code)
+    assert len(port_lines(debug_result.source_code)) == 2
+
+
+def test_debug_script_includes_the_same_temporary_calibration_box(golden):
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    assert "CALIBRATION_BOX_TEMPORARY" in result.source_code
+    assert "calibration_box = BOX(s, L=30, W=15, H=5).rotateY(0.0).translate((800, 800, 800))" in result.source_code
+    assert "calibration_box.subtractFrom" not in result.source_code
+    assert "subtractFrom(calibration_box)" not in result.source_code
+    assert "uniteWith(calibration_box)" not in result.source_code
+    assert "calibration_box.uniteWith" not in result.source_code
+    assert "calibration_box.erase()" not in result.source_code
+
+
+def test_debug_script_warns_about_the_real_r1_failure_and_the_toggle(golden):
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    assert any("R1" in w and "elimino Gajo A y Gajo B" in w for w in result.warnings)
+    assert any("DEBUG_CUTTERS" in w and "False" in w for w in result.warnings)
+
+
+def test_debug_script_cites_sources(golden):
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
+    for citation in SOURCE_CITATIONS:
+        assert citation in result.source_code
+
+
+def test_debug_script_never_touches_proprietary_plant_files(golden):
+    params, geometry = golden
+    result = generate_debug_cutters_script(params, geometry)
     for forbidden in (".pcat", ".pspx", ".pspc"):
         assert forbidden not in result.source_code

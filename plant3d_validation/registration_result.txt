@@ -609,3 +609,112 @@ No avanzar a V0.3.1B3C-2 hasta que B3C-1R1 pase en hardware real. Si
 R1 tambien falla, la convencion de BOX ya no es la primera sospecha
 (esta corroborada dos veces) -- revisar si rotateY alcanza la
 orientacion deseada en 3D, usando el CALIBRATION_BOX_TEMPORARY incluido.
+
+===================================================================
+RESULTADO REAL V0.3.1B3C-1R1 -- FAIL GEOMETRICO -- 2026-08-25
+===================================================================
+
+Probado en AutoCAD Plant 3D 2025 real por el usuario.
+
+  B3C-1R1_SCRIPT_EXECUTION = PASS
+  BOX_CREATION             = PASS
+  CALIBRATION_BOX_VISIBLE  = PASS
+  B3C-1R1_MITER_GEOMETRY   = FAIL
+  GAJO_A_SURVIVES_CUT      = FAIL
+  GAJO_B_SURVIVES_CUT      = FAIL
+  COMMON_CUT_PLANE         = NOT_VALIDATED
+
+Observacion textual del usuario: el script ejecuto correctamente
+(TESTACPSCRIPT = PASS, ENTITY_RETURN = PASS), pero despues de
+ejecutarlo solo quedo visible el BOX de calibracion. No aparecen Gajo A
+ni Gajo B -- los cutters eliminaron los gajos por completo en vez de
+cortar solo la cuña esperada.
+
+La convencion "BOX centrado" (respaldada por tres fuentes reales
+independientes) y la verificacion algebraica de que la cara cercana de
+cada cutter coincide con joint_point siguen siendo correctas sobre el
+papel, pero el resultado real contradice esa prediccion. Causa aun no
+confirmada -- posibles sospechas sin evidencia todavia: identidad de
+los ejes locales L/W/H de BOX (cual corresponde a la normal del plano),
+orden real de composicion rotateY+translate para BOX especificamente
+(no solo para CYLINDER, ya confirmado), o algun otro detalle de la
+API no capturado por las fuentes citadas.
+
+Instruccion explicita del usuario: NO modificar
+core/geometry/segmented_elbow.py, joint_point, ni plane_normal. NO
+avanzar a B3C-2. NO intentar corregir el corte otra vez a ciegas --
+primero generar un fixture de diagnostico puramente visual (ver
+siguiente entrada, V0.3.1B3C-1R2) y ver fisicamente los cutters en
+Plant 3D antes de proponer una tercera formula.
+
+Estado global se mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+===================================================================
+Actualizacion V0.3.1B3C-1R2 -- CUTTER VISUAL DEBUG (aun sin probar en real) -- 2026-08-25
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B3C-1R2
+(generate_debug_cutters_script() en
+plant3d/generators/miter_joint_script_generator.py): fixture
+EXCLUSIVAMENTE de diagnostico, sin intentar corregir el corte todavia.
+
+Mismo Gajo 2 + Gajo 3, mismo joint_point y plane_normal de
+core/geometry/segmented_elbow.py (sin modificar), mismos centros y
+rotaciones de cutter que R1 (ningun numero de posicion cambio) -- pero
+esta version:
+  - NO ejecuta subtractFrom() con los BOX cutters.
+  - NO ejecuta erase() sobre los BOX cutters.
+  - Mantiene visibles simultaneamente: GAJO_A (hueco), GAJO_B (hueco),
+    CUTTER_A, CUTTER_B.
+  - El taladro interior de cada gajo (subtractFrom+erase, confirmado en
+    real desde B3B-1) SI se mantiene -- es riesgo ya validado, no
+    relacionado con el problema del cutter de inglete.
+
+Toggle incluido en el script generado:
+  DEBUG_CUTTERS = True   -- esta version: cutters visibles, sin resta
+  DEBUG_CUTTERS = False  -- reproduce el comportamiento de R1 (resta
+                            real + union), sin regenerar el script
+
+Disclosure previo a la generacion (dado al usuario en el chat antes de
+crear el .py):
+  1. Dimensiones BOX: cutters L=2000/W=2000/H=500mm; calibracion
+     L=30/W=15/H=5mm.
+  2. Sistema local asumido: L -> eje local X, W -> eje local Y (el eje
+     que siempre vale 0 en este caso 2D-en-XZ), H -> eje local Z (el
+     eje que rotateY orienta).
+  3. joint_point (Plant3D)  = (-48.327381, 0.0, 48.327381)
+  4. plane_normal (Plant3D) = (0.707107, 0.0, 0.707107)
+  5. centro Cutter A        = (128.449314, 0.0, 225.104076)
+  6. centro Cutter B        = (-225.104076, 0.0, -128.449314)
+  7. Orden de rotaciones: ambos cutters rotateY(45.0) luego translate(centro);
+     Gajo A rotateY(60.0).translate(start_a); Gajo B rotateY(30.0).translate(start_b)
+     -- sin cambios respecto a R1.
+  8. Cara esperada en el plano de junta: Cutter A, cara local H=-H/2;
+     Cutter B, cara local H=+H/2.
+
+Proposito: permitir inspeccion visual real en Plant 3D 2025 de la
+posicion/orientacion real de Cutter A, Cutter B, joint_point y el plano
+comun previsto, ANTES de proponer una tercera formula de corte a
+ciegas.
+
+Se agrego una advertencia explicita en el script y en el generador
+documentando el fallo real de R1 (eliminacion completa de Gajo A/B) y
+el significado del toggle DEBUG_CUTTERS.
+
+No se modifico core/geometry/segmented_elbow.py, las centerlines, el
+punto de union, los ejes de segmento ni la matematica del plano de
+corte. Limitado a Gajo 2 + Gajo 3 (una sola junta) -- no se avanza a
+B3C-2, Catalog Builder ni Spec Editor.
+
+Prueba real pendiente:
+  (testacpscript "HDPE_SEGMENTED_ELBOW")
+Resultado esperado: los 4 objetos (GAJO_A, GAJO_B, CUTTER_A, CUTTER_B)
+visibles simultaneamente sin error de ejecucion. El usuario reportara
+una vista isometrica / observacion real de la posicion relativa de los
+4 objetos.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+No se debe proponer una nueva formula de corte hasta ver el resultado
+real de este diagnostico visual.

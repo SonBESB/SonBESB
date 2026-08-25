@@ -389,3 +389,231 @@ def {script_name}(s, OD={params.od_mm:g}, THK={params.thickness_mm:g}, R={params
 '''
 
     return GeneratedMiterJointScript(script_name=script_name, source_code=source, warnings=warnings)
+
+
+def generate_debug_cutters_script(
+    params: ElbowParameters,
+    geometry: SegmentedElbowGeometry,
+    script_name: str = DEFAULT_SCRIPT_NAME,
+) -> GeneratedMiterJointScript:
+    """V0.3.1B3C-1R2 — CUTTER VISUAL DEBUG, no cut performed.
+
+    V0.3.1B3C-1R1 (corrected centered-BOX cutter math) was tested on
+    real AutoCAD Plant 3D 2025: the script executed with no error, but
+    after running only the calibration box remained visible -- Gajo A
+    and Gajo B were gone, meaning the cutters removed the ENTIRE piece
+    instead of just the intended wedge.
+
+        B3C-1R1_SCRIPT_EXECUTION = PASS, BOX_CREATION = PASS,
+        CALIBRATION_BOX_VISIBLE = PASS
+        B3C-1R1_MITER_GEOMETRY = FAIL, GAJO_A_SURVIVES_CUT = FAIL,
+        GAJO_B_SURVIVES_CUT = FAIL, COMMON_CUT_PLANE = NOT_VALIDATED
+
+    Per the user's explicit instruction: no third guessed formula before
+    SEEING the actual cutter geometry in Plant 3D. This generator
+    produces a pure diagnostic fixture -- same Gajo 2 / Gajo 3, same
+    joint_point, same plane_normal, same cutter centers/rotations as
+    R1 (nothing about the position math changed; only whether the
+    boolean cut is actually executed) -- with a literal, in-script
+    toggle:
+
+        DEBUG_CUTTERS = True   # cutters stay visible, no subtraction
+        DEBUG_CUTTERS = False  # real cut: subtractFrom + erase + union (= R1 behavior)
+
+    R2 always generates with DEBUG_CUTTERS = True. Flipping that one
+    line to False locally reproduces exactly V0.3.1B3C-1R1's cutting
+    behaviour -- so once the real cutter geometry is understood from
+    this visual test, the same file can be hand-edited to try a
+    corrected cut without waiting for a regenerated script, though any
+    actual formula change should still come from this generator once
+    the real cause is confirmed.
+
+    The gajos ARE still hollowed (ext.subtractFrom(int) + int.erase()) --
+    that inner-bore subtraction is unrelated to the miter cutters and
+    was already hardware-confirmed by V0.3.1B3B-1, so keeping it does
+    not reintroduce any unconfirmed risk into this diagnostic.
+    """
+    warnings: List[str] = []
+    pieces = geometry.all_pieces
+    if len(pieces) < 4:
+        raise ValueError("Expected at least 4 pieces (2 stubs + >=2 gajos) to pick a representative joint.")
+    gajo_a, gajo_b = pieces[2], pieces[3]
+    if gajo_a.cut_plane_end.point != gajo_b.cut_plane_start.point:
+        raise ValueError("Gajo 2's end plane and Gajo 3's start plane must be the same shared bisector plane.")
+
+    inside_diameter_mm = params.od_mm - 2 * params.thickness_mm
+    shared_plane = gajo_a.cut_plane_end
+
+    def piece_theta(direction: Tuple[float, float, float]) -> float:
+        dx, dy, dz = direction
+        if abs(dz) > 1e-6:
+            warnings.append(f"direction {direction!r} has a nonzero Z component -- planar-bend assumption violated.")
+        return round(math.degrees(math.atan2(dx, dy)), 6)
+
+    theta_a = piece_theta(gajo_a.direction)
+    theta_b = piece_theta(gajo_b.direction)
+    theta_cut = piece_theta(shared_plane.normal)
+
+    start_a_p3d = _fmt_vec(_swap_yz(gajo_a.axis_start))
+    start_b_p3d = _fmt_vec(_swap_yz(gajo_b.axis_start))
+    plane_point_p3d = _swap_yz(shared_plane.point)
+    normal_p3d = _swap_yz(shared_plane.normal)
+
+    cutter_a_center = _cutter_center(plane_point_p3d, normal_p3d, sign=+1.0)
+    cutter_b_center = _cutter_center(plane_point_p3d, normal_p3d, sign=-1.0)
+    cutter_a_translate = _fmt_vec(tuple(round(c, 6) for c in cutter_a_center))
+    cutter_b_translate = _fmt_vec(tuple(round(c, 6) for c in cutter_b_center))
+
+    len_a = round(gajo_a.length_mm, 6)
+    len_b = round(gajo_b.length_mm, 6)
+    overhang_len_a = round(gajo_a.length_mm + 2 * _INNER_CUT_OVERHANG_MM, 6)
+    overhang_len_b = round(gajo_b.length_mm + 2 * _INNER_CUT_OVERHANG_MM, 6)
+
+    p1_pos = _fmt_vec(_swap_yz(gajo_a.axis_start))
+    p1_dir = _fmt_vec(_swap_yz(tuple(-c for c in gajo_a.direction)))
+    p2_pos = _fmt_vec(_swap_yz(gajo_b.axis_end))
+    p2_dir = _fmt_vec(_swap_yz(gajo_b.direction))
+
+    calibration_translate = _fmt_vec(_CALIBRATION_BOX_TRANSLATE)
+
+    warnings.append(
+        "V0.3.1B3C-1R1 real: la ejecucion paso sin error pero el corte elimino Gajo A y "
+        "Gajo B por completo (solo quedo visible la caja de calibracion). Este script (R2) "
+        "NO ejecuta subtractFrom/erase/uniteWith sobre los cutters -- deja todo visible "
+        "(GAJO_A, GAJO_B, CUTTER_A, CUTTER_B) para diagnosticar visualmente antes de probar "
+        "una tercera formula a ciegas."
+    )
+    warnings.append(
+        "DEBUG_CUTTERS = True en esta version: cambiar esa linea a False dentro del .py ya "
+        "generado reproduce el comportamiento de corte real de B3C-1R1 (subtractFrom + "
+        "erase + union) sin regenerar el script -- util para retomar una vez entendida la "
+        "geometria real de los cutters, aunque cualquier correccion de formula debe seguir "
+        "viniendo de este generador una vez confirmada la causa."
+    )
+    warnings.append(
+        "El taladro interior (ext.subtractFrom(int)+int.erase()) SI se mantiene -- es "
+        "independiente de los cutters de inglete y ya tiene confirmacion de hardware real "
+        "desde V0.3.1B3B-1, mantenerlo no reintroduce riesgo sin confirmar en este diagnostico."
+    )
+    warnings.append(
+        "Si los 4 objetos (GAJO_A, GAJO_B, CUTTER_A, CUTTER_B) resultan dificiles de "
+        "distinguir por superposicion en la vista, el siguiente paso disponible es generar "
+        "copias de los cutters desplazadas una distancia conocida en Z, manteniendo "
+        "documentada la posicion matematica original -- no incluido en esta version porque "
+        "el usuario lo pidio solo como respaldo, no como parte obligatoria de R2."
+    )
+
+    citations_block = "\n".join(f"#   - {url}" for url in SOURCE_CITATIONS)
+
+    source = f'''"""{script_name}.py — V0.3.1B3C-1R2: CUTTER VISUAL DEBUG, sin corte ejecutado.
+
+V0.3.1B3C-1R1 (BOX centrado) se probo real y ejecuto SIN ERROR, pero
+elimino Gajo A y Gajo B por completo -- solo quedo visible la caja de
+calibracion (ver plant3d_validation/registration_result.txt):
+
+  B3C-1R1_SCRIPT_EXECUTION = PASS   BOX_CREATION = PASS
+  CALIBRATION_BOX_VISIBLE  = PASS
+  B3C-1R1_MITER_GEOMETRY = FAIL   GAJO_A_SURVIVES_CUT = FAIL
+  GAJO_B_SURVIVES_CUT    = FAIL   COMMON_CUT_PLANE = NOT_VALIDATED
+
+Esta version es un fixture EXCLUSIVAMENTE de diagnostico: mismo Gajo 2 +
+Gajo 3, mismo joint_point, misma plane_normal, mismos centros/
+rotaciones de cutter que R1 (ningun numero de posicion cambio) -- pero
+NO ejecuta subtractFrom/erase/uniteWith sobre los cutters. Los 4 objetos
+(GAJO_A hueco, GAJO_B hueco, CUTTER_A, CUTTER_B) quedan visibles y
+separados para inspeccionar fisicamente en Plant 3D antes de intentar
+una tercera formula sin haber visto la geometria real de los cutters.
+
+Toggle incluido en el script:
+    DEBUG_CUTTERS = True   # esta version: cutters visibles, sin resta
+    DEBUG_CUTTERS = False  # comportamiento de R1: resta real + union
+
+No se modifico core/geometry/segmented_elbow.py, joint_point ni
+plane_normal. No se avanza a B3C-2.
+
+Golden Case: DN{params.dn_mm:g} {params.pn} {params.angle_deg:g} grados
+  OD={params.od_mm:g} THK={params.thickness_mm:g} ID={round(inside_diameter_mm, 6):g} R={params.radius_mm:g}
+  LE={params.le_mm:g} Z={geometry.z_mm:g}
+  Junta probada aqui: Gajo 2 ({gajo_a.angle_deg:g} deg) / Gajo 3 ({gajo_b.angle_deg:g} deg)
+"""
+
+# ---------------------------------------------------------------------------
+# Metadata (ver docs/PLANT3D_CUSTOMSCRIPT.md para el detalle de cada fuente
+# citada):
+{citations_block}
+# ---------------------------------------------------------------------------
+from aqa.math import *
+from varmain.primitiv import *
+from varmain.custom import *
+
+
+@activate(
+    Group="Fitting",
+    TooltipShort="Cutter visual debug (Gajo2/Gajo3) - sin corte",
+    TooltipLong="V0.3.1B3C-1R2: fixture de diagnostico -- gajos y cutters visibles, sin ejecutar el corte. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
+    LengthUnit="mm",
+    Ports=2,
+)
+@group("MainDimensions")
+@param(OD=LENGTH, TooltipShort="Diametro exterior", TooltipLong="OD (mm) - Golden Case: {params.od_mm:g}", Ask4Dist=True)
+@param(THK=LENGTH, TooltipShort="Espesor de pared", TooltipLong="Espesor (mm) - Golden Case: {params.thickness_mm:g}. ID = OD - 2*THK.")
+@param(R=LENGTH, TooltipShort="Radio de curvatura (posiciones ya horneadas)", TooltipLong="R (mm) - Golden Case: {params.radius_mm:g}. Cambiar este valor en vivo NO recalcula la geometria.")
+@param(LE=LENGTH, TooltipShort="Longitud tangente (no usada en este fixture)", TooltipLong="Le (mm) - Golden Case: {params.le_mm:g}. Este fixture no incluye los tramos Le.")
+@param(Z=LENGTH, TooltipShort="Distancia vertice-cara (posiciones ya horneadas)", TooltipLong="Z (mm) - Golden Case: {geometry.z_mm:g}.")
+def {script_name}(s, OD={params.od_mm:g}, THK={params.thickness_mm:g}, R={params.radius_mm:g}, LE={params.le_mm:g}, Z={geometry.z_mm:g}, OF=-1, K=1, **kw):
+    """CUTTER_VISUAL_DEBUG -- Gajo2 + Gajo3 huecos + ambos cutters, TODOS visibles, sin corte.
+
+    NO representa el codo DIN 16963 completo, y en modo DEBUG_CUTTERS=True
+    tampoco representa una junta a inglete real todavia -- es un
+    fixture de calibracion visual. R/LE/Z se reciben pero las posiciones
+    ya vienen horneadas desde core/geometry/segmented_elbow.py (sin
+    modificar). Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+    """
+    DEBUG_CUTTERS = True  # True = cutters visibles, sin resta. False = corte real (comportamiento R1).
+
+    radio_ext_mm = OD / 2.0
+    radio_int_mm = (OD - 2 * THK) / 2.0
+
+    # Gajo 2 (hueco) -- taladro interior ya confirmado en real por B3B-1, se mantiene.
+    ext_a = CYLINDER(s, R=radio_ext_mm, H={len_a:.6g}, O=0.0).rotateY({theta_a:.6g}).translate({start_a_p3d})
+    int_a = CYLINDER(s, R=radio_int_mm, H={overhang_len_a:.6g}, O=-{_INNER_CUT_OVERHANG_MM:g}).rotateY({theta_a:.6g}).translate({start_a_p3d})
+    ext_a.subtractFrom(int_a)
+    int_a.erase()
+
+    # Gajo 3 (hueco)
+    ext_b = CYLINDER(s, R=radio_ext_mm, H={len_b:.6g}, O=0.0).rotateY({theta_b:.6g}).translate({start_b_p3d})
+    int_b = CYLINDER(s, R=radio_int_mm, H={overhang_len_b:.6g}, O=-{_INNER_CUT_OVERHANG_MM:g}).rotateY({theta_b:.6g}).translate({start_b_p3d})
+    ext_b.subtractFrom(int_b)
+    int_b.erase()
+
+    # Cutters -- MISMOS centro/rotacion que V0.3.1B3C-1R1 (ver docstring del
+    # modulo generador para la verificacion algebraica). En modo debug NO se
+    # restan de los gajos ni se borran, para poder inspeccionarlos por separado.
+    # cutter_a: centro = joint_point + (H/2)*plane_normal (cara cercana en joint_point, mirando -normal).
+    cutter_a = BOX(s, L={_CUTTER_L_MM:g}, W={_CUTTER_W_MM:g}, H={_CUTTER_H_MM:g}).rotateY({theta_cut:.6g}).translate({cutter_a_translate})
+
+    # cutter_b: centro = joint_point - (H/2)*plane_normal (cara cercana en joint_point, mirando +normal).
+    cutter_b = BOX(s, L={_CUTTER_L_MM:g}, W={_CUTTER_W_MM:g}, H={_CUTTER_H_MM:g}).rotateY({theta_cut:.6g}).translate({cutter_b_translate})
+
+    if DEBUG_CUTTERS:
+        pass  # GAJO_A, GAJO_B, CUTTER_A, CUTTER_B quedan todos visibles, sin tocar.
+    else:
+        # Comportamiento de V0.3.1B3C-1R1 (corte real):
+        ext_a.subtractFrom(cutter_a)
+        cutter_a.erase()
+        ext_b.subtractFrom(cutter_b)
+        cutter_b.erase()
+        ext_a.uniteWith(ext_b)
+        ext_b.erase()
+
+    s.setPoint({p1_pos}, {p1_dir}, 0.0)
+    s.setPoint({p2_pos}, {p2_dir}, 0.0)
+
+    # CALIBRATION_BOX_TEMPORARY -- no forma parte del codo, no se une ni se
+    # resta de nada. Tres dimensiones distintas (L={_CALIBRATION_BOX_L_MM:g}, W={_CALIBRATION_BOX_W_MM:g}, H={_CALIBRATION_BOX_H_MM:g}) y sin
+    # rotar, lejos de la geometria real, para confirmar visualmente que eje
+    # mundial corresponde a cada parametro de BOX.
+    calibration_box = BOX(s, L={_CALIBRATION_BOX_L_MM:g}, W={_CALIBRATION_BOX_W_MM:g}, H={_CALIBRATION_BOX_H_MM:g}).rotateY(0.0).translate({calibration_translate})
+'''
+
+    return GeneratedMiterJointScript(script_name=script_name, source_code=source, warnings=warnings)

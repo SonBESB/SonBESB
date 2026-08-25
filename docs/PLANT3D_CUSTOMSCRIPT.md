@@ -717,16 +717,117 @@ Generador (mismo módulo, `plant3d/generators/miter_joint_script_generator.py`)
 cubierto por `tests/test_plant3d_miter_joint_script.py`, incluyendo la
 verificación algebraica de la ecuación del plano para ambos cutters.
 
+### V0.3.1B3C-1R1 — FAIL real (el corte eliminó Gajo A y Gajo B por completo)
+
+Probado en AutoCAD Plant 3D 2025 real:
+
+```
+B3C-1R1_SCRIPT_EXECUTION = PASS   BOX_CREATION = PASS
+CALIBRATION_BOX_VISIBLE  = PASS
+B3C-1R1_MITER_GEOMETRY = FAIL   GAJO_A_SURVIVES_CUT = FAIL
+GAJO_B_SURVIVES_CUT    = FAIL   COMMON_CUT_PLANE = NOT_VALIDATED
+```
+
+El script ejecutó sin error (`TESTACPSCRIPT = PASS`,
+`ENTITY_RETURN = PASS`), pero al terminar solo quedó visible el
+`CALIBRATION_BOX_TEMPORARY`. Gajo A y Gajo B desaparecieron por
+completo — los cutters eliminaron las piezas enteras en vez de recortar
+solo la cuña esperada, a pesar de que la convención "BOX centrado" está
+respaldada por tres fuentes reales independientes y de que la
+verificación algebraica de `dot(X - joint_point, plane_normal) = 0`
+para la cara cercana de ambos cutters es correcta sobre el papel.
+
+Esto significa que el problema no está (solo) en dónde queda el
+*centro* del cutter, sino posiblemente en algo más — identidad real de
+los ejes locales `L`/`W`/`H` de `BOX` (cuál de ellos es realmente el
+eje que `rotateY` orienta hacia `plane_normal`), o algún detalle de
+cómo Plant 3D compone `rotateY` + `translate` específicamente para
+`BOX` (no solo para `CYLINDER`, ya confirmado) — sin evidencia
+concluyente todavía para ninguna de las dos.
+
+Instrucción explícita del usuario: no modificar
+`core/geometry/segmented_elbow.py`, `joint_point` ni `plane_normal`; no
+avanzar a B3C-2; y, sobre todo, no intentar corregir el corte una
+tercera vez a ciegas — primero construir un fixture puramente
+diagnóstico que deje ver físicamente los cutters en Plant 3D.
+
+### V0.3.1B3C-1R2 — CUTTER VISUAL DEBUG (sin corte ejecutado)
+
+Generador: `generate_debug_cutters_script()` en
+`plant3d/generators/miter_joint_script_generator.py`. Reutiliza
+exactamente el mismo fixture (Gajo 2 + Gajo 3), el mismo `joint_point`
+y `plane_normal`, y los mismos centros/rotaciones de cutter que R1
+(ningún número de posición cambió) — pero:
+
+- **NO** ejecuta `subtractFrom()` con los BOX cutters.
+- **NO** ejecuta `erase()` sobre los BOX cutters.
+- Mantiene visibles simultáneamente: `GAJO_A` (hueco), `GAJO_B`
+  (hueco), `CUTTER_A`, `CUTTER_B`.
+- El taladro interior de cada gajo (`subtractFrom`+`erase`, confirmado
+  en real desde B3B-1) se mantiene sin cambios — es riesgo ya validado
+  y no forma parte de lo que este diagnóstico busca aislar.
+
+Incluye un toggle literal dentro del `.py` generado:
+
+```python
+DEBUG_CUTTERS = True   # esta version: cutters visibles, sin resta
+DEBUG_CUTTERS = False  # reproduce el comportamiento de R1 (resta real + union)
+```
+
+`DEBUG_CUTTERS = True` para esta entrega — el usuario puede cambiar la
+línea a `False` localmente en el `.py` ya generado para reproducir el
+corte real de R1 sin pedir una regeneración, aunque cualquier
+*corrección* de fórmula debe seguir viniendo del generador una vez
+confirmada la causa real, no de una edición manual.
+
+**Disclosure previo a la generación** (los 8 puntos pedidos por el
+usuario, dados en el chat antes de crear el `.py`):
+
+1. Dimensiones BOX: cutters `L=2000, W=2000, H=500` mm; calibración
+   `L=30, W=15, H=5` mm.
+2. Sistema local asumido: `L` → eje local X, `W` → eje local Y (el eje
+   que siempre vale 0 en este caso 2D-en-XZ), `H` → eje local Z (el eje
+   que `rotateY` orienta).
+3. `joint_point` (Plant3D)  = `(-48.327381, 0.0, 48.327381)`
+4. `plane_normal` (Plant3D) = `(0.707107, 0.0, 0.707107)`
+5. centro Cutter A = `(128.449314, 0.0, 225.104076)`
+6. centro Cutter B = `(-225.104076, 0.0, -128.449314)`
+7. Orden de rotaciones: ambos cutters `rotateY(45.0)` luego
+   `.translate(centro)`; Gajo A `rotateY(60.0).translate(start_a)`;
+   Gajo B `rotateY(30.0).translate(start_b)` — sin cambios respecto a
+   R1.
+8. Cara esperada en el plano de junta: Cutter A, cara local `H=-H/2`;
+   Cutter B, cara local `H=+H/2`.
+
+Propósito: permitir inspección visual real en Plant 3D 2025 de la
+posición/orientación real de Cutter A, Cutter B, `joint_point` y el
+plano común previsto, antes de proponer una tercera fórmula de corte a
+ciegas. Como respaldo opcional (no incluido en esta entrega, ya que el
+usuario lo enmarcó como futuro), si los 4 objetos superpuestos son
+difíciles de distinguir visualmente, el siguiente paso disponible sería
+generar copias de diagnóstico de los cutters desplazadas una distancia
+conocida en Z, manteniendo documentada la posición matemática
+original.
+
+Cubierto por `tests/test_plant3d_miter_joint_script.py` (bloque
+`V0.3.1B3C-1R2`): validez sintáctica, determinismo, que la rama
+`DEBUG_CUTTERS = True` sea un `pass` sin tocar los cutters, que la rama
+`else` reproduzca exactamente la secuencia de corte real de R1, que el
+taladro interior siga presente, que los centros de cutter y los puertos
+no cambien respecto a R1, y que el `CALIBRATION_BOX_TEMPORARY` siga
+presente y sin consumir.
+
 ### Siguiente paso
 
-Probar V0.3.1B3C-1R1 en el mismo entorno (Plant 3D 2025):
-`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando el mismo punto de
-unión, el mismo plano de corte, sin gap, sin overlap, pared exterior
-continua y taladro interior continuo. Registrar el resultado real en
-una nueva entrada de `plant3d_validation/registration_result.txt`. Si
-R1 también falla, la convención de `BOX` ya no es la primera sospecha
-(está corroborada dos veces) — revisar en su lugar si `rotateY` por sí
-solo alcanza la orientación deseada en 3D, apoyándose en el
-`CALIBRATION_BOX_TEMPORARY` incluido. Solo si B3C-1R1 pasa se avanza a
-V0.3.1B3C-2 (aplicar el mismo principio a las otras dos juntas del codo
-completo) — sin saltar etapas.
+Probar V0.3.1B3C-1R2 en el mismo entorno (Plant 3D 2025):
+`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando que los 4 objetos
+(`GAJO_A`, `GAJO_B`, `CUTTER_A`, `CUTTER_B`) queden visibles
+simultáneamente sin error de ejecución. El usuario reportará una vista
+isométrica / observación real de la posición relativa de los 4 objetos.
+Registrar el resultado real en una nueva entrada de
+`plant3d_validation/registration_result.txt`. No se debe proponer una
+nueva fórmula de corte hasta ver ese resultado real. Solo una vez
+entendida la geometría real de los cutters (y con una corrección
+validada) se reintenta B3C-1 con corte real; solo si eso pasa se avanza
+a V0.3.1B3C-2 (aplicar el mismo principio a las otras dos juntas del
+codo completo) — sin saltar etapas.
