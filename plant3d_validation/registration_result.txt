@@ -284,3 +284,78 @@ Si la union completa de 6 piezas falla, aislar probando primero una
 union de solo 2 piezas (por ejemplo pieza_0 + pieza_1) antes de las 6,
 siguiendo la misma disciplina de aislar una variable a la vez que
 funciono para B1/B2.
+
+===================================================================
+V0.3.1B3A VALIDADO EN AUTOCAD PLANT 3D 2025 REAL -- 2026-08-24
+===================================================================
+
+Comando ejecutado:
+  (testacpscript "HDPE_SEGMENTED_ELBOW")
+
+Resultado real: geometria generada correctamente dentro de Plant 3D.
+Observado visualmente: tramo horizontal, cuatro gajos, tramo vertical,
+transicion total aproximada de 90 grados, y los solapes esperados entre
+cilindros (no hay cortes a inglete todavia -- NO es un fallo, es la
+simplificacion ya revelada en la version B3A).
+
+  V0.3.1B3A               = PASS
+  MULTIPLE_CYLINDER       = PASS
+  ROTATEY_ARBITRARY       = PASS
+  TRANSLATE               = PASS
+  UNITEWITH               = PASS
+  ERASE                   = PASS
+  SEGMENT_CHAIN           = PASS
+  PLANT3D_NATIVE_GEOMETRY = PASS
+
+Esta es la primera confirmacion real de: translate(...), angulos rotateY
+distintos de 90 (82.5/60/30/7.5/0), y union de 6 piezas via
+uniteWith()+erase() -- los tres elementos que B3A introducia sin
+confirmacion de hardware previa.
+
+Estado global: PLANT3D_VALIDATION_IN_PROGRESS -- NO PLANT3D_VALIDATED
+(geometria exterior confirmada; faltan taladro interior y corte a
+inglete real).
+
+Siguiente paso: V0.3.1B3B-1 -- prueba minima de subtractFrom() en un
+tubo recto hueco (VALIDATION_HOLLOW_GEOMETRY_ONLY), antes de aplicar el
+mismo principio a las 6 piezas del codo (B3B-2). Ver
+docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+
+===================================================================
+Actualizacion V0.3.1B3B-1 (aun sin probar en real) -- 2026-08-24
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B3B-1
+(generate_validation_script_b3b1() en
+plant3d/generators/validation_script_generator.py): NO toca la cadena de
+6 piezas de B3A (ya PASS real) -- es un fixture aislado, un solo tubo
+recto (misma forma que B1/B2) con un taladro via subtractFrom():
+
+  id_mm = OD - 2*THK
+  tubo_exterior = CYLINDER(s, R=OD/2.0, H=LE, O=0.0).rotateY(90)
+  tubo_interior = CYLINDER(s, R=id_mm/2.0, H=LE+10, O=-5).rotateY(90)
+  tubo_exterior.subtractFrom(tubo_interior)
+  tubo_interior.erase()
+
+A diferencia de uniteWith() en B3A, subtractFrom()+erase() SI tienen
+cita literal directa (no es una inferencia por analogia). El cilindro
+interior se hace 5mm mas largo por extremo (margen de modelado propio,
+tecnica CAD estandar, no una convencion de Plant 3D) para evitar caras
+coincidentes en la resta. Puertos identicos al patron ya confirmado en
+B1/B2 (no introducen variables nuevas).
+
+Prueba real pendiente:
+  (testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "THK" "6.6" "LE" "150")
+Resultado esperado: un tubo recto visiblemente HUECO (no solido) de
+OD=110mm, ID=96.8mm, largo 150mm.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+Siguiente paso: reemplazar el .py en CustomScripts,
+PLANTREGISTERCUSTOMSCRIPTS, cerrar y reabrir Plant 3D,
+(arxload "PnP3dACPAdapter"),
+(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "THK" "6.6" "LE" "150"),
+y registrar el resultado real en una nueva entrada fechada a
+continuacion de esta. Si pasa, avanzar a V0.3.1B3B-2 (aplicar el mismo
+subtractFrom() a las 6 piezas de B3A) -- no antes.

@@ -433,15 +433,72 @@ por analogia, sin cita literal propia — sinalado explicitamente en los
 
 Generador cubierto por `tests/test_plant3d_segmented_elbow_script.py`.
 
+### V0.3.1B3A — VALIDADO EN AUTOCAD PLANT 3D 2025 REAL
+
+```text
+(testacpscript "HDPE_SEGMENTED_ELBOW")
+-> geometria generada correctamente: tramo horizontal, cuatro gajos,
+   tramo vertical, transicion total ~90°, y los solapes esperados entre
+   cilindros (sin cortes a inglete todavia -- NO es un fallo)
+
+V0.3.1B3A               = PASS
+MULTIPLE_CYLINDER       = PASS
+ROTATEY_ARBITRARY       = PASS
+TRANSLATE               = PASS
+UNITEWITH               = PASS
+ERASE                   = PASS
+SEGMENT_CHAIN           = PASS
+PLANT3D_NATIVE_GEOMETRY = PASS
+```
+
+Evidencia completa en `plant3d_validation/registration_result.txt`.
+Primera confirmacion real de `translate(...)`, angulos `rotateY`
+distintos de 90°, y union de 6 piezas via `uniteWith()`+`.erase()` — los
+tres elementos que B3A introducia sin confirmacion de hardware. Los
+solapes visibles en las 3 juntas internas son el resultado esperado de
+la simplificacion ya revelada (sin corte a inglete todavia), confirmado
+por el usuario explicitamente como no-fallo.
+
+### V0.3.1B3B-1 — prueba minima de `subtractFrom()` (tubo hueco simple)
+
+Con B3A confirmado, el siguiente paso NO modifica la cadena de 6 piezas
+directamente: `generate_validation_script_b3b1()` (en
+`plant3d/generators/validation_script_generator.py`, junto a B1/B2 —
+sigue sin consumir `ElbowParameters`/geometria real, es de nuevo un
+fixture de validacion) aisla `subtractFrom()` en el caso mas simple
+posible: un solo tubo recto (misma forma que B1/B2), OD110/ID96.8/e6.6,
+marcado `VALIDATION_HOLLOW_GEOMETRY_ONLY`.
+
+```python
+id_mm = OD - 2 * THK  # misma ecuacion que core/models/elbow.py
+
+tubo_exterior = CYLINDER(s, R=OD / 2.0, H=LE, O=0.0).rotateY(90)
+tubo_interior = CYLINDER(s, R=id_mm / 2.0, H=LE + 10, O=-5).rotateY(90)
+
+tubo_exterior.subtractFrom(tubo_interior)
+tubo_interior.erase()
+```
+
+A diferencia de `uniteWith()` en B3A (inferido por analogia),
+`subtractFrom()` y su `.erase()` requerido SI tienen cita literal
+directa: *"BOX1.subtractFrom(BOX2) to subtract BOX2 from BOX1 ... the
+second object must be removed from memory with .erase"* (ver
+SOURCE_CITATIONS). El cilindro interior se construye 5mm mas largo por
+cada extremo — una decision de modelado propia de este generador
+(tecnica CAD estandar para evitar caras coincidentes en la resta), no
+una convencion de la API de Plant 3D. Los puertos se mantienen
+identicos al patron ya confirmado en B1/B2 (`Ports=2` + los mismos dos
+`s.setPoint(...)`) precisamente porque no introducen ninguna variable
+nueva. Generador cubierto por las pruebas `test_b3b1_*` en
+`tests/test_plant3d_validation_script.py`.
+
 ### Siguiente paso
 
-Probar V0.3.1B3A en el mismo entorno (Plant 3D 2025):
-`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando un codo visible con 4
-gajos, 3 juntas internas (solapadas, no a inglete), OD=110, R=165,
-Le=150, Z=315, angulo total 90°, P1/P2 en las caras reales. Registrar el
-resultado real en una nueva entrada de
-`plant3d_validation/registration_result.txt`. Si la union de 6 piezas
-falla, aislar probando primero una union de solo 2 piezas antes de las
-6 (misma disciplina que funciono para B1/B2). Solo si B3A pasa se
-avanza a V0.3.1B3B (taladro interior via `subtractFrom`, ID=96.8mm) y,
-mas adelante, al corte a inglete real — sin saltar etapas.
+Probar V0.3.1B3B-1 en el mismo entorno (Plant 3D 2025):
+`(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "THK" "6.6" "LE" "150")`,
+esperando un tubo recto visiblemente HUECO (no solido) de OD=110mm,
+ID=96.8mm, largo 150mm. Registrar el resultado real en una nueva entrada
+de `plant3d_validation/registration_result.txt`. Solo si B3B-1 pasa se
+avanza a V0.3.1B3B-2 (aplicar el mismo `subtractFrom()` a las 6 piezas
+de B3A) y, mas adelante, a V0.3.1B3C (cortes a inglete reales) — sin
+saltar etapas.

@@ -16,6 +16,7 @@ from plant3d.generators.validation_script_generator import (
     generate_validation_script,
     generate_validation_script_b1,
     generate_validation_script_b2,
+    generate_validation_script_b3b1,
 )
 
 
@@ -267,5 +268,90 @@ def test_b2_cites_sources():
 
 def test_b2_never_touches_proprietary_plant_files():
     result = generate_validation_script_b2()
+    for forbidden in (".pcat", ".pspx", ".pspc"):
+        assert forbidden not in result.source_code
+
+
+# --- V0.3.1B3B-1: minimal hollow-tube test, subtractFrom() isolated ------
+
+
+def test_b3b1_is_syntactically_valid_python():
+    result = generate_validation_script_b3b1()
+    ast.parse(result.source_code)
+
+
+def test_b3b1_is_deterministic():
+    first = generate_validation_script_b3b1()
+    second = generate_validation_script_b3b1()
+    assert first.source_code == second.source_code
+
+
+def test_b3b1_entry_point_matches_script_name():
+    result = generate_validation_script_b3b1()
+    assert result.script_name == DEFAULT_SCRIPT_NAME
+    assert f"def {DEFAULT_SCRIPT_NAME}(" in result.source_code
+
+
+def test_b3b1_computes_id_the_same_way_as_the_core_model():
+    """ID = OD - 2*THK, not a new/independent formula."""
+    result = generate_validation_script_b3b1()
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "id_mm = OD - 2 * THK" in body
+
+
+def test_b3b1_uses_subtractfrom_and_erase_on_inner_cylinder_only():
+    result = generate_validation_script_b3b1()
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "tubo_exterior.subtractFrom(tubo_interior)" in body
+    assert "tubo_interior.erase()" in body
+    assert "tubo_exterior.erase()" not in body  # only the consumed operand is erased
+
+
+def test_b3b1_does_not_touch_the_b3a_six_piece_chain():
+    """B3B-1 must isolate subtractFrom() alone -- no pieza_N variables,
+    no uniteWith, no translate (single straight tube, R/H/O only)."""
+    result = generate_validation_script_b3b1()
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "pieza_" not in body
+    assert "uniteWith" not in body
+    assert "translate" not in body
+
+
+def test_b3b1_inner_cylinder_overhangs_the_outer_one():
+    """The inner cutting cylinder must be longer than the outer one
+    (disclosed CAD margin, not a Plant 3D convention) to avoid a
+    coincident/degenerate cut face at the open ends."""
+    result = generate_validation_script_b3b1()
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "H=LE, O=0.0" in body  # outer: exact length, no offset
+    assert "H=LE + 10, O=-5" in body  # inner: overhangs both ends
+
+
+def test_b3b1_keeps_ports_identical_to_already_confirmed_b1_b2_pattern():
+    result = generate_validation_script_b3b1()
+    assert "Ports=2" in result.source_code
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)" in body
+    assert "s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)" in body
+
+
+def test_b3b1_is_clearly_marked_hollow_validation_only():
+    result = generate_validation_script_b3b1()
+    assert "VALIDATION_HOLLOW_GEOMETRY_ONLY" in result.source_code
+
+
+def test_b3b1_warns_that_subtractfrom_is_literally_confirmed_unlike_unitewith():
+    result = generate_validation_script_b3b1()
+    assert any("subtractFrom" in w and "SI estan confirmados" in w for w in result.warnings)
+
+
+def test_b3b1_cites_sources():
+    result = generate_validation_script_b3b1()
+    for citation in SOURCE_CITATIONS:
+        assert citation in result.source_code
+
+
+def test_b3b1_never_touches_proprietary_plant_files():
+    result = generate_validation_script_b3b1()
     for forbidden in (".pcat", ".pspx", ".pspc"):
         assert forbidden not in result.source_code

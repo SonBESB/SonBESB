@@ -93,6 +93,11 @@ SOURCE_CITATIONS = (
     "https://forums.autodesk.com/t5/autocad-plant-3d-forum/plant-3d-python-scripts-help-understanding-ask4dist/td-p/13829280",
     "https://blog.autodesk.io/custom-python-scripts-for-autocad-plant-3d-part-4/",
     "https://pdfcoffee.com/custom-python-scripts-for-autocad-plant-3d-part-2-autocad-devblog-pdf-free.html",
+    # Added for V0.3.1B3B-1: subtractFrom()/erase() -- BOX1.subtractFrom(BOX2)
+    # subtracts BOX2 from BOX1, storing the result in BOX1; BOX2 must then be
+    # removed with .erase() (same confirmed pattern used for intersectWith()):
+    "https://forums.autodesk.com/t5/autocad-plant-3d-forum/custom-scripts/td-p/8038308",
+    "https://docplayer.net/38668628-Annex-b-creating-custom-component-scripts-in-plant-3d.html",
 )
 
 
@@ -442,6 +447,137 @@ def {script_name}(
         "s.setPoint(posicion, direccion, 0.0) ya estaban confirmadas desde "
         "V0.3.1A; CYLINDER/rotateY ya tienen confirmacion de hardware real "
         "desde B1.",
+    ]
+
+    return GeneratedValidationScript(script_name=script_name, source_code=source, warnings=warnings)
+
+
+def generate_validation_script_b3b1(script_name: str = DEFAULT_SCRIPT_NAME) -> GeneratedValidationScript:
+    """V0.3.1B3B-1: minimal hollow-tube test, isolating subtractFrom()
+    alone before touching the 6-piece B3A chain.
+
+    V0.3.1B3A (6-piece union via CYLINDER + rotateY + translate +
+    uniteWith + erase) was tested for real on AutoCAD Plant 3D 2025 (see
+    plant3d_validation/registration_result.txt) and PASSED: a visible
+    elbow with 4 gajos, 3 (expected, un-mitred) joints, and the correct
+    ~90 degree overall transition. That confirms the exterior geometry.
+
+    This function does NOT touch that 6-piece chain. It builds the
+    smallest possible test of the ONE thing B3A never used:
+    subtractFrom() -- a single straight OD110/ID96.8 hollow tube (one
+    outer CYLINDER minus one inner CYLINDER), per the user's explicit
+    staged request (B3B-1 before B3B-2, no skipping). Ports are kept
+    ONLY because they introduce zero new variables: Ports=2 + the exact
+    same s.setPoint(...) call shape already confirmed by B1/B2.
+
+    Marked VALIDATION_HOLLOW_GEOMETRY_ONLY -- not the codo, not even the
+    B3A exterior shape (this is a single straight tube, matching B1/B2's
+    shape, not the bent one).
+
+    subtractFrom() and its required .erase() on the consumed object are
+    both explicitly confirmed (unlike uniteWith()'s inferred-by-analogy
+    erase() usage in B3A): "BOX1.subtractFrom(BOX2) to subtract BOX2
+    from BOX1 ... the second object must be removed from memory with
+    .erase" -- see SOURCE_CITATIONS.
+
+    The inner cylinder is built slightly longer than the outer one (a
+    small axial over-extension at both ends, a standard CAD boolean
+    technique, not a Plant 3D API convention) so the subtraction cuts a
+    clean through-hole instead of risking a coincident/degenerate face
+    at the open ends. This is this generator's own modeling choice, not
+    an invented API call.
+    """
+    citations_block = "\n".join(f"#   - {url}" for url in SOURCE_CITATIONS)
+    overhang_mm = 5.0  # disclosed modeling margin, not a Plant 3D convention
+
+    source = f'''"""{script_name}.py — V0.3.1B3B-1: VALIDATION_HOLLOW_GEOMETRY_ONLY.
+
+Prueba minima de subtractFrom(): UN tubo recto hueco (OD110/ID96.8/e6.6),
+antes de aplicar el mismo principio a las 6 piezas de B3A (eso sera
+V0.3.1B3B-2). NO es el codo, NO es siquiera la forma exterior de B3A --
+es un tubo recto simple, igual de forma al de B1/B2, con un taladro.
+
+B3A (6 piezas, CYLINDER+rotateY+translate+uniteWith+erase) ya fue
+PROBADO REAL y paso (ver plant3d_validation/registration_result.txt).
+Este script no lo toca -- aisla unicamente subtractFrom().
+
+Prueba real siguiente:
+    (testacpscript "{script_name}" "OD" "110" "THK" "6.6" "LE" "150")
+Resultado esperado: un tubo recto visiblemente HUECO (no solido) de
+OD=110mm, ID=96.8mm, largo 150mm.
+"""
+
+# ---------------------------------------------------------------------------
+# Metadata (ver docs/PLANT3D_CUSTOMSCRIPT.md para el detalle de cada
+# fuente citada):
+{citations_block}
+# ---------------------------------------------------------------------------
+from aqa.math import *
+from varmain.primitiv import *
+from varmain.custom import *
+
+
+@activate(
+    Group="Support",
+    TooltipShort="HDPE Hollow Tube Validation",
+    TooltipLong="VALIDATION_HOLLOW_GEOMETRY_ONLY: straight hollow tube via subtractFrom",
+    LengthUnit="mm",
+    Ports=2,
+)
+@group("MainDimensions")
+@param(
+    OD=LENGTH,
+    TooltipShort="Outside Diameter",
+    Ask4Dist=True,
+)
+@param(
+    THK=LENGTH,
+    TooltipLong="Wall thickness",
+)
+@param(
+    LE=LENGTH,
+    TooltipLong="Validation Length",
+)
+def {script_name}(
+    s,
+    OD=110.0,
+    THK=6.6,
+    LE=150.0,
+    OF=-1,
+    K=1,
+    **kw
+):
+    """VALIDATION_HOLLOW_GEOMETRY_ONLY -- un tubo recto hueco, NO el codo.
+
+    ID se calcula como OD - 2*THK (misma ecuacion que
+    core/models/elbow.py, no una formula nueva). El cilindro interior se
+    construye {overhang_mm:g}mm mas largo por cada extremo (margen de
+    modelado propio, no una convencion de Plant 3D) para garantizar un
+    taladro pasante limpio.
+    """
+    id_mm = OD - 2 * THK
+
+    tubo_exterior = CYLINDER(s, R=OD / 2.0, H=LE, O=0.0).rotateY(90)
+    tubo_interior = CYLINDER(s, R=id_mm / 2.0, H=LE + {2 * overhang_mm:g}, O=-{overhang_mm:g}).rotateY(90)
+
+    tubo_exterior.subtractFrom(tubo_interior)
+    tubo_interior.erase()
+
+    s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)
+    s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)
+'''
+
+    warnings = [
+        "V0.3.1B3B-1 aisla subtractFrom() en un tubo recto simple, sin tocar la "
+        "cadena de 6 piezas de B3A (ya PASS real) -- ver "
+        "docs/PLANT3D_CUSTOMSCRIPT.md seccion V0.3.1.",
+        "subtractFrom() y su .erase() requerido SI estan confirmados "
+        "literalmente (a diferencia de uniteWith() en B3A, que fue una "
+        "inferencia por analogia) -- ver SOURCE_CITATIONS arriba.",
+        "El margen axial de 5mm en el cilindro interior es una decision de "
+        "modelado propia de este generador (tecnica CAD estandar para evitar "
+        "caras coincidentes en la resta), no una convencion de la API de "
+        "Plant 3D.",
     ]
 
     return GeneratedValidationScript(script_name=script_name, source_code=source, warnings=warnings)
