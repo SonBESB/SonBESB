@@ -821,3 +821,188 @@ def {script_name}(s, OD={params.od_mm:g}, THK={params.thickness_mm:g}, R={params
 '''
 
     return GeneratedMiterJointScript(script_name=script_name, source_code=source, warnings=warnings)
+
+
+def generate_axis_corrected_side_cut_script(
+    params: ElbowParameters,
+    geometry: SegmentedElbowGeometry,
+    script_name: str = DEFAULT_SCRIPT_NAME,
+) -> GeneratedMiterJointScript:
+    """V0.3.1B3C-1R4 -- CORRECT BOX AXIS MAPPING.
+
+    R3A and R3A-inverted BOTH made Gajo A vanish completely on real
+    hardware, under opposite half-space signs. That symmetry rules out
+    the half-space sign as the cause (see
+    plant3d_validation/registration_result.txt) and points at the
+    cutter's actual SIZE along the rotated axis: BOX(s, L=2000, W=2000,
+    H=500) assumed `H` controls the local-Z extent (the axis rotateY
+    orients toward plane_normal), by analogy with CYLINDER's H. That
+    analogy was never itself cited -- and re-reading the ALREADY-cited
+    real excerpt in SOURCE_CITATIONS more carefully contradicts it:
+
+        BOX(s, H=L, L=paB, W=A) used with
+        s.setPoint((-L/2.0, 0.0, 0.0), ...) / s.setPoint((L/2.0, 0.0, 0.0), ...)
+
+    Both ports sit on the LOCAL X AXIS (Y=Z=0), at +-L/2, and that same
+    `L` value was passed to BOX's `H=` keyword -- i.e. `H` controls the
+    local X extent, not Z. Combined with the real double-FAIL, the
+    working hypothesis for this round is:
+
+        BOX H -> local X      BOX L -> local Y      BOX W -> local Z
+
+    (not L->X, W->Y, H->Z as R1/R2/R3A assumed). This is a corrected
+    reading of evidence already on file, not a new unconfirmed source.
+
+    Only the cutter's BOX(...) call changes: the thin (500mm) dimension
+    now goes to `W` (the hypothesized local-Z/rotateY-oriented axis)
+    instead of `H`, and the two large (2000mm) dimensions go to `H` and
+    `L`. _cutter_center()'s math is untouched (still
+    joint_point +- (thin/2)*plane_normal = +-250mm), joint_point,
+    plane_normal, rotateY(45) for the cutter, rotateY(60) for Gajo A,
+    and the half-space SIGN (same automatic side_a-based choice as
+    R3A's base, non-inverted, variant per the user's explicit
+    instruction not to re-test inversion this round) are all identical
+    to prior rounds. No Gajo B, no uniteWith, no calibration box,
+    Ports=1 -- same minimal fixture shape as R3A.
+    """
+    warnings: List[str] = []
+    pieces = geometry.all_pieces
+    if len(pieces) < 4:
+        raise ValueError("Expected at least 4 pieces (2 stubs + >=2 gajos) to pick a representative joint.")
+    gajo_a, gajo_b = pieces[2], pieces[3]
+    if gajo_a.cut_plane_end.point != gajo_b.cut_plane_start.point:
+        raise ValueError("Gajo 2's end plane and Gajo 3's start plane must be the same shared bisector plane.")
+
+    shared_plane = gajo_a.cut_plane_end
+
+    def piece_theta(direction: Tuple[float, float, float]) -> float:
+        dx, dy, dz = direction
+        if abs(dz) > 1e-6:
+            warnings.append(f"direction {direction!r} has a nonzero Z component -- planar-bend assumption violated.")
+        return round(math.degrees(math.atan2(dx, dy)), 6)
+
+    theta_a = piece_theta(gajo_a.direction)
+    theta_cut = piece_theta(shared_plane.normal)
+
+    start_a_p3d = _fmt_vec(_swap_yz(gajo_a.axis_start))
+    plane_point_p3d = _swap_yz(shared_plane.point)
+    normal_p3d = _swap_yz(shared_plane.normal)
+
+    midpoint_a = tuple((gajo_a.axis_start[i] + gajo_a.axis_end[i]) / 2.0 for i in range(3))
+    midpoint_a_p3d = _swap_yz(midpoint_a)
+    cutter_sign, side_a = _select_cutter_sign(midpoint_a_p3d, plane_point_p3d, normal_p3d)
+
+    cutter_center = _cutter_center(plane_point_p3d, normal_p3d, sign=cutter_sign)
+    cutter_translate = _fmt_vec(tuple(round(c, 6) for c in cutter_center))
+
+    len_a = round(gajo_a.length_mm, 6)
+    overhang_len_a = round(gajo_a.length_mm + 2 * _INNER_CUT_OVERHANG_MM, 6)
+
+    p1_pos = _fmt_vec(_swap_yz(gajo_a.axis_start))
+    p1_dir = _fmt_vec(_swap_yz(tuple(-c for c in gajo_a.direction)))
+
+    warnings.append(
+        "V0.3.1B3C-1R3A y R3A-inverted real: Gajo A desaparecio por completo en AMBOS signos "
+        "de semiespacio -- eso descarta el signo como causa y apunta al TAMANO del cutter en el "
+        "eje rotado. Releyendo la MISMA cita ya presente en SOURCE_CITATIONS (BOX(s, H=L, L=paB, "
+        "W=A) con puertos en (-L/2,0,0)/(L/2,0,0), ambos sobre el eje local X, con ese mismo L "
+        "pasado al parametro H=) se concluye que H controla el eje local X, no Z -- la analogia "
+        "con CYLINDER (H=Z) nunca estuvo citada para BOX. Esta version (R4) usa "
+        "H=2000/L=2000/W=500 en vez de L=2000/W=2000/H=500 -- el valor delgado (500mm) ahora va "
+        "en W, la hipotesis de que W es el eje que rotateY orienta hacia plane_normal."
+    )
+    warnings.append(
+        f"joint_point, plane_normal, rotateY(45) del cutter, rotateY(60) de Gajo A y el signo de "
+        f"semiespacio (side_a={round(side_a, 6):g}, sign={cutter_sign:+.1f}, MISMO que R3A base, "
+        f"no invertido por instruccion explicita del usuario) no cambiaron. Solo cambio la "
+        f"asignacion de valores a los parametros H/L/W de BOX."
+    )
+    warnings.append(
+        "Fixture minimo sin cambios: sin Gajo B, sin segundo cutter, sin uniteWith, sin "
+        "calibration box, Ports=1 con un solo s.setPoint() en el extremo libre de Gajo A."
+    )
+
+    citations_block = "\n".join(f"#   - {url}" for url in SOURCE_CITATIONS)
+
+    source = f'''"""{script_name}.py — V0.3.1B3C-1R4: CORRECT BOX AXIS MAPPING (H=X, L=Y, W=Z).
+
+V0.3.1B3C-1R3A y R3A-inverted se probaron reales: Gajo A desaparecio
+por completo en AMBOS signos de semiespacio, descartando el signo como
+causa. Releyendo la cita ya presente en SOURCE_CITATIONS
+(BOX(s, H=L, L=paB, W=A) con puertos en (-L/2,0,0)/(L/2,0,0), ambos
+sobre el eje local X, con ese mismo L pasado a H=) se concluye que BOX
+`H` controla el eje local X, no Z como se asumia por analogia con
+CYLINDER (nunca citada para BOX).
+
+Esta version cambia UNICAMENTE la asignacion de valores del cutter:
+H=2000, L=2000, W=500 (antes L=2000, W=2000, H=500) -- el valor delgado
+va ahora en W, hipotesis de que W es el eje que rotateY(45) orienta
+hacia plane_normal. joint_point, plane_normal, rotateY(45),
+rotateY(60) de Gajo A y el signo de semiespacio
+(side_a={round(side_a, 6):g}, sign={cutter_sign:+.1f}, igual que R3A base,
+NO invertido) no cambiaron.
+
+Sin Gajo B, sin uniteWith, sin calibration box. No se modifico
+core/geometry/segmented_elbow.py, joint_point ni plane_normal.
+
+Verificar en Plant 3D:
+  GAJO_A survives?            (deberia sobrevivir, no desaparecer)
+  inclined cut face?          (deberia verse una cara de corte inclinada)
+  cut passes joint point?     (la cara deberia pasar por el punto de union)
+
+Golden Case: DN{params.dn_mm:g} {params.pn} {params.angle_deg:g} grados
+  OD={params.od_mm:g} THK={params.thickness_mm:g} R={params.radius_mm:g}
+  LE={params.le_mm:g} Z={geometry.z_mm:g}
+  Pieza probada aqui: Gajo 2 ({gajo_a.angle_deg:g} deg), sin Gajo 3.
+"""
+
+# ---------------------------------------------------------------------------
+# Metadata (ver docs/PLANT3D_CUSTOMSCRIPT.md para el detalle de cada fuente
+# citada):
+{citations_block}
+# ---------------------------------------------------------------------------
+from aqa.math import *
+from varmain.primitiv import *
+from varmain.custom import *
+
+
+@activate(
+    Group="Fitting",
+    TooltipShort="Axis-corrected side cut (Gajo A) - fixture minimo R4",
+    TooltipLong="V0.3.1B3C-1R4: solo Gajo A hueco + un cutter BOX con mapeo de ejes corregido (H=X, L=Y, W=Z), un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
+    LengthUnit="mm",
+    Ports=1,
+)
+@group("MainDimensions")
+@param(OD=LENGTH, TooltipShort="Diametro exterior", TooltipLong="OD (mm) - Golden Case: {params.od_mm:g}", Ask4Dist=True)
+@param(THK=LENGTH, TooltipShort="Espesor de pared", TooltipLong="Espesor (mm) - Golden Case: {params.thickness_mm:g}. ID = OD - 2*THK.")
+@param(R=LENGTH, TooltipShort="Radio de curvatura (posiciones ya horneadas)", TooltipLong="R (mm) - Golden Case: {params.radius_mm:g}. Cambiar este valor en vivo NO recalcula la geometria.")
+@param(LE=LENGTH, TooltipShort="Longitud tangente (no usada en este fixture)", TooltipLong="Le (mm) - Golden Case: {params.le_mm:g}. Este fixture no incluye los tramos Le.")
+@param(Z=LENGTH, TooltipShort="Distancia vertice-cara (posiciones ya horneadas)", TooltipLong="Z (mm) - Golden Case: {geometry.z_mm:g}.")
+def {script_name}(s, OD={params.od_mm:g}, THK={params.thickness_mm:g}, R={params.radius_mm:g}, LE={params.le_mm:g}, Z={geometry.z_mm:g}, OF=-1, K=1, **kw):
+    """AXIS_CORRECTED_SIDE_CUT -- solo Gajo A hueco + un cutter BOX (H=X, L=Y, W=Z), un solo subtractFrom.
+
+    NO representa el codo completo ni siquiera una junta a inglete
+    completa -- es el fixture minimo para verificar el mapeo de ejes
+    H/L/W de BOX. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+    """
+    radio_ext_mm = OD / 2.0
+    radio_int_mm = (OD - 2 * THK) / 2.0
+
+    # Gajo A (hueco) -- taladro interior ya confirmado en real por B3B-1.
+    ext_a = CYLINDER(s, R=radio_ext_mm, H={len_a:.6g}, O=0.0).rotateY({theta_a:.6g}).translate({start_a_p3d})
+    int_a = CYLINDER(s, R=radio_int_mm, H={overhang_len_a:.6g}, O=-{_INNER_CUT_OVERHANG_MM:g}).rotateY({theta_a:.6g}).translate({start_a_p3d})
+    ext_a.subtractFrom(int_a)
+    int_a.erase()
+
+    # Un solo cutter -- mismo joint_point/plane_normal/rotateY(45) que R1-R3A,
+    # mismo signo de semiespacio (side_a={round(side_a, 6):g}, sign={cutter_sign:+.1f}, no invertido).
+    # CORREGIDO en R4: el valor delgado (500mm) va en W, no en H (ver docstring del modulo).
+    cutter_a = BOX(s, H={_CUTTER_L_MM:g}, L={_CUTTER_W_MM:g}, W={_CUTTER_H_MM:g}).rotateY({theta_cut:.6g}).translate({cutter_translate})
+    ext_a.subtractFrom(cutter_a)
+    cutter_a.erase()
+
+    s.setPoint({p1_pos}, {p1_dir}, 0.0)
+'''
+
+    return GeneratedMiterJointScript(script_name=script_name, source_code=source, warnings=warnings)

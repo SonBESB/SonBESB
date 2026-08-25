@@ -16,6 +16,7 @@ from core.geometry.segmented_elbow import build_segmented_elbow_geometry
 from data.repository import ElbowRepository
 from plant3d.generators.miter_joint_script_generator import (
     SOURCE_CITATIONS,
+    generate_axis_corrected_side_cut_script,
     generate_debug_cutters_script,
     generate_single_miter_joint_script,
     generate_single_side_cut_script,
@@ -521,5 +522,67 @@ def test_side_cut_cites_sources(golden):
 def test_side_cut_never_touches_proprietary_plant_files(golden):
     params, geometry = golden
     result = generate_single_side_cut_script(params, geometry)
+    for forbidden in (".pcat", ".pspx", ".pspc"):
+        assert forbidden not in result.source_code
+
+
+# --- V0.3.1B3C-1R4: CORRECT BOX AXIS MAPPING (H=X, L=Y, W=Z) --------------
+
+
+def test_axis_corrected_script_is_syntactically_valid_and_deterministic(golden):
+    params, geometry = golden
+    first = generate_axis_corrected_side_cut_script(params, geometry)
+    second = generate_axis_corrected_side_cut_script(params, geometry)
+    ast.parse(first.source_code)
+    assert first.source_code == second.source_code
+
+
+def test_axis_corrected_cutter_uses_the_new_h_l_w_assignment(golden):
+    """The one and only change vs R3A: the thin (500mm) dimension now
+    goes to W (hypothesized local-Z axis), not H."""
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert "cutter_a = BOX(s, H=2000, L=2000, W=500)" in body
+    assert "L=2000, W=2000, H=500" not in body
+
+
+def test_axis_corrected_cutter_center_and_rotation_match_r3a_base(golden):
+    """Position math is untouched -- only the BOX(...) kwarg assignment
+    changed. Same center/rotation as R3A's base (non-inverted) variant."""
+    params, geometry = golden
+    r4 = generate_axis_corrected_side_cut_script(params, geometry)
+    r3a = generate_single_side_cut_script(params, geometry)
+
+    def translate_arg(source: str):
+        line = next(l for l in source.splitlines() if "cutter_a = BOX(" in l)
+        return line.split(".translate(")[1]
+
+    assert translate_arg(r4.source_code) == translate_arg(r3a.source_code)
+    assert ".rotateY(45)" in r4.source_code
+
+
+def test_axis_corrected_keeps_the_minimal_fixture_shape(golden):
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert "ext_b" not in body
+    assert "cutter_b" not in body
+    assert "uniteWith" not in body
+    assert "CALIBRATION_BOX_TEMPORARY" not in result.source_code
+    assert "Ports=1," in result.source_code
+    assert body.count("s.setPoint(") == 1
+
+
+def test_axis_corrected_cites_sources(golden):
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script(params, geometry)
+    for citation in SOURCE_CITATIONS:
+        assert citation in result.source_code
+
+
+def test_axis_corrected_never_touches_proprietary_plant_files(golden):
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script(params, geometry)
     for forbidden in (".pcat", ".pspx", ".pspc"):
         assert forbidden not in result.source_code

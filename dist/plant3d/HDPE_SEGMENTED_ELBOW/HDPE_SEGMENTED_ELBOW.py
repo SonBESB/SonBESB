@@ -1,31 +1,28 @@
-"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R3A-inverted: SINGLE SIDE CUT, solo Gajo A + un cutter.
+"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R4: CORRECT BOX AXIS MAPPING (H=X, L=Y, W=Z).
 
-V0.3.1B3C-1R2 (visual debug) se probo real: GAJO_A, GAJO_B, CUTTER_A y
-CUTTER_B se vieron simultaneamente en semiespacios opuestos, orientacion
-coherente con el plano bisector. Unica incertidumbre restante: que
-semiespacio elimina realmente cada cutter al ejecutar subtractFrom().
+V0.3.1B3C-1R3A y R3A-inverted se probaron reales: Gajo A desaparecio
+por completo en AMBOS signos de semiespacio, descartando el signo como
+causa. Releyendo la cita ya presente en SOURCE_CITATIONS
+(BOX(s, H=L, L=paB, W=A) con puertos en (-L/2,0,0)/(L/2,0,0), ambos
+sobre el eje local X, con ese mismo L pasado a H=) se concluye que BOX
+`H` controla el eje local X, no Z como se asumia por analogia con
+CYLINDER (nunca citada para BOX).
 
-Este fixture es el minimo posible para responder eso: SOLO Gajo A
-(hueco, mismo patron ya confirmado por B3B-1) + UN cutter BOX, un solo
-subtractFrom(). Sin Gajo B, sin segundo cutter, sin uniteWith, sin
-calibration box.
+Esta version cambia UNICAMENTE la asignacion de valores del cutter:
+H=2000, L=2000, W=500 (antes L=2000, W=2000, H=500) -- el valor delgado
+va ahora en W, hipotesis de que W es el eje que rotateY(45) orienta
+hacia plane_normal. joint_point, plane_normal, rotateY(45),
+rotateY(60) de Gajo A y el signo de semiespacio
+(side_a=-41.25, sign=+1.0, igual que R3A base,
+NO invertido) no cambiaron.
 
-joint_point, plane_normal, rotateY(45) y _cutter_center() NO cambiaron
-respecto de R1/R2. Lo unico nuevo: el signo de semiespacio para el
-cutter de Gajo A se eligio automaticamente a partir de
-side_a = dot(midpoint_gajo_a - joint_point, plane_normal) = -41.25
-(negativo) -- el cutter debe ocupar el
-semiespacio CONTRARIO al cuerpo del gajo, sign=-1.0.
-Variante INVERTIDA: usa el signo contrario al calculo automatico (pedida solo si la variante base hizo desaparecer Gajo A).
-
-No se modifico core/geometry/segmented_elbow.py, joint_point ni
-plane_normal. No se avanza a Gajo B ni a B3C-2.
+Sin Gajo B, sin uniteWith, sin calibration box. No se modifico
+core/geometry/segmented_elbow.py, joint_point ni plane_normal.
 
 Verificar en Plant 3D:
   GAJO_A survives?            (deberia sobrevivir, no desaparecer)
-  CUT FACE appears?           (deberia verse una cara de corte nueva)
-  CUT FACE passes joint?      (la cara deberia pasar por el punto de union)
-  CORRECT HALFSPACE removed?  (debe quitar solo la cuna, no toda la pieza)
+  inclined cut face?          (deberia verse una cara de corte inclinada)
+  cut passes joint point?     (la cara deberia pasar por el punto de union)
 
 Golden Case: DN110 PN10 90 grados
   OD=110 THK=6.6 R=165
@@ -59,8 +56,8 @@ from varmain.custom import *
 
 @activate(
     Group="Fitting",
-    TooltipShort="Single side cut (Gajo A) - fixture minimo de diagnostico",
-    TooltipLong="V0.3.1B3C-1R3A-inverted: solo Gajo A hueco + un cutter BOX, un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
+    TooltipShort="Axis-corrected side cut (Gajo A) - fixture minimo R4",
+    TooltipLong="V0.3.1B3C-1R4: solo Gajo A hueco + un cutter BOX con mapeo de ejes corregido (H=X, L=Y, W=Z), un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
     LengthUnit="mm",
     Ports=1,
 )
@@ -71,12 +68,11 @@ from varmain.custom import *
 @param(LE=LENGTH, TooltipShort="Longitud tangente (no usada en este fixture)", TooltipLong="Le (mm) - Golden Case: 150. Este fixture no incluye los tramos Le.")
 @param(Z=LENGTH, TooltipShort="Distancia vertice-cara (posiciones ya horneadas)", TooltipLong="Z (mm) - Golden Case: 315.")
 def HDPE_SEGMENTED_ELBOW(s, OD=110, THK=6.6, R=165, LE=150, Z=315, OF=-1, K=1, **kw):
-    """SINGLE_SIDE_CUT -- solo Gajo A hueco + un cutter BOX, un solo subtractFrom.
+    """AXIS_CORRECTED_SIDE_CUT -- solo Gajo A hueco + un cutter BOX (H=X, L=Y, W=Z), un solo subtractFrom.
 
     NO representa el codo completo ni siquiera una junta a inglete
-    completa -- es el fixture minimo para verificar que semiespacio
-    elimina realmente un cutter BOX. Ver docs/PLANT3D_CUSTOMSCRIPT.md,
-    seccion V0.3.1.
+    completa -- es el fixture minimo para verificar el mapeo de ejes
+    H/L/W de BOX. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
     """
     radio_ext_mm = OD / 2.0
     radio_int_mm = (OD - 2 * THK) / 2.0
@@ -87,9 +83,10 @@ def HDPE_SEGMENTED_ELBOW(s, OD=110, THK=6.6, R=165, LE=150, Z=315, OF=-1, K=1, *
     ext_a.subtractFrom(int_a)
     int_a.erase()
 
-    # Un solo cutter -- mismo joint_point/plane_normal/rotateY(45) que R1/R2,
-    # semiespacio elegido automaticamente (side_a=-41.25, sign=-1.0).
-    cutter_a = BOX(s, L=2000, W=2000, H=500).rotateY(45).translate((-225.104, 0, -128.449))
+    # Un solo cutter -- mismo joint_point/plane_normal/rotateY(45) que R1-R3A,
+    # mismo signo de semiespacio (side_a=-41.25, sign=+1.0, no invertido).
+    # CORREGIDO en R4: el valor delgado (500mm) va en W, no en H (ver docstring del modulo).
+    cutter_a = BOX(s, H=2000, L=2000, W=500).rotateY(45).translate((128.449, 0, 225.104))
     ext_a.subtractFrom(cutter_a)
     cutter_a.erase()
 

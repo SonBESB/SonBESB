@@ -818,3 +818,50 @@ esperar instruccion.
 
 No se avanza a Gajo B ni a B3C-2 hasta que Gajo A sobreviva el corte en
 real. Estado global se mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+===================================================================
+RESULTADO REAL V0.3.1B3C-1R3A-INVERTED -- FAIL -- 2026-08-25
+===================================================================
+
+Probado en AutoCAD Plant 3D 2025 real: ejecuto correctamente pero Gajo A
+volvio a desaparecer por completo, igual que R3A (signo +1.0). El
+FAIL en AMBOS signos de semiespacio descarta el signo como causa raiz.
+
+Causa raiz probable identificada por el usuario, releyendo la MISMA
+cita ya presente en SOURCE_CITATIONS (no una fuente nueva): el excerpt
+BOX(s, H=L, L=paB, W=A) usado con s.setPoint((-L/2.0,0,0),...)/
+s.setPoint((L/2.0,0,0),...) -- ambos puertos sobre el eje local X, con
+ese mismo L pasado al parametro H= -- implica que BOX `H` controla el
+eje local X, no Z. R1/R2/R3A asumieron H->Z por analogia con CYLINDER,
+analogia que nunca estuvo citada para BOX especificamente. Bajo esa
+asuncion incorrecta, el cutter L=2000/W=2000/H=500 tenia en realidad
+2000mm de profundidad en el eje que rotateY orienta hacia plane_normal
+(no 500mm), cubriendo la pieza entera en ambos signos.
+
+===================================================================
+Actualizacion V0.3.1B3C-1R4 -- CORRECT BOX AXIS MAPPING (aun sin probar en real) -- 2026-08-25
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero con
+generate_axis_corrected_side_cut_script() en
+plant3d/generators/miter_joint_script_generator.py: mismo fixture
+minimo que R3A (solo Gajo A hueco + un cutter + un subtractFrom, sin
+Gajo B, sin uniteWith, sin calibration box, Ports=1), cambiando
+UNICAMENTE la asignacion de valores del cutter:
+
+  BOX(s, H=2000, L=2000, W=500)   (antes: L=2000, W=2000, H=500)
+
+El valor delgado (500mm) ahora va en W, hipotesis de que W (no H) es el
+eje que rotateY(45) orienta hacia plane_normal. joint_point,
+plane_normal, rotateY(45) del cutter, rotateY(60) de Gajo A, y el signo
+de semiespacio (sign=+1.0, side_a=-41.25, el mismo de R3A base, NO
+invertido por instruccion explicita del usuario) no cambiaron.
+
+Prueba real pendiente: (testacpscript "HDPE_SEGMENTED_ELBOW"). Esperado:
+GAJO_A survives=PASS, cara de corte inclinada visible, la cara pasa por
+joint_point. Si tambien falla, no se debe adivinar una cuarta vez sin
+evidencia nueva.
+
+No se modifico core/geometry/segmented_elbow.py, joint_point ni
+plane_normal. No se avanza a Gajo B ni a B3C-2. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
