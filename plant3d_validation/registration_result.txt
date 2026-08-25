@@ -417,3 +417,87 @@ mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
 Si falla al aplicar subtractFrom() a toda la cadena de 6 piezas, aislar
 probando primero 2 piezas huecas antes de las 6, sin tocar la
 matematica de posiciones ya validada por B3A.
+
+===================================================================
+V0.3.1B3B-2 VALIDADO EN AUTOCAD PLANT 3D 2025 REAL -- 2026-08-24
+===================================================================
+
+Se realizo una seccion longitudinal real del codo generado. La
+inspeccion confirma un conducto interior continuo desde el tramo
+horizontal hasta el tramo vertical -- no existe una pared transversal
+que bloquee completamente el flujo.
+
+  V0.3.1B3B-2             = PASS
+  B3B-2_SCRIPT_EXECUTION  = PASS
+  B3B-2_HOLLOW_GEOMETRY   = PASS
+  B3B-2_CONTINUOUS_BORE   = PASS
+  HOLLOW_90_DEG_CHAIN     = PASS
+
+NO se implementa B3B-3 (no fue necesario).
+
+IMPORTANTE (nota del usuario, no un fallo de B3B-2): la seccion tambien
+muestra escalones/intersecciones locales en las uniones, debido a los
+cilindros solapados (la simplificacion ya revelada desde B3A: sin corte
+a inglete todavia). Por lo tanto todavia NO se declara:
+
+  CONSTANT_ID_AT_JOINTS           -- pendiente
+  CONSTANT_THICKNESS_AT_JOINTS    -- pendiente
+  FABRICATION_GEOMETRY_VALIDATED  -- pendiente
+
+Estos tres quedan pendientes de los cortes reales a inglete (B3C).
+
+Estado global: PLANT3D_VALIDATION_IN_PROGRESS -- NO PLANT3D_VALIDATED.
+
+Siguiente paso: V0.3.1B3C-1 -- una unica junta real a inglete entre dos
+gajos huecos consecutivos (fixture independiente, NO modifica todavia
+la cadena completa de B3B-2). Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion
+V0.3.1.
+
+===================================================================
+Actualizacion V0.3.1B3C-1 (aun sin probar en real) -- 2026-08-24
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B3C-1
+(generate_single_miter_joint_script() en
+plant3d/generators/miter_joint_script_generator.py): fixture AISLADO,
+NO el codo completo -- solo Gajo 2 (30 grados) + Gajo 3 (30 grados), la
+junta representativa del Golden Case, cada uno ya hueco (mismo patron
+subtractFrom()+erase() confirmado por B3B-1/B3B-2 en real), cortados
+contra su plano bisectriz REAL compartido (cut_plane_end de Gajo 2 ==
+cut_plane_start de Gajo 3, calculado por core/geometry/segmented_elbow.py,
+verificado programaticamente antes de generar el script).
+
+Investigacion previa (obligatoria segun instruccion del usuario, ver
+docs/PLANT3D_CUSTOMSCRIPT.md seccion V0.3.1 para el detalle completo):
+  - BOX(s, L, W, H): firma literal confirmada (sin parametro O, a
+    diferencia de CYLINDER) via una respuesta real de Autodesk Community.
+  - Hilo real "Creation of miter bend without straight parts"
+    (ARC3DS(s,D,D2,R,A,S) + PYRAMID(s,L,W,H,HT)) investigado pero NO
+    adoptado: solo se pudo leer un resumen del buscador (WebFetch sigue
+    bloqueado), y no se pudo confirmar si ARC3DS soporta segmentacion
+    ASIMETRICA (15-30-30-15) como la del Golden Case -- se prefirio
+    seguir con el enfoque propio ya validado (CYLINDER por pieza) y usar
+    BOX solo como cuerpo cortador.
+
+UNICA SUPOSICION NO CONFIRMADA (senalada explicitamente): la convencion
+de origen local de BOX (esquina vs centrado) no tiene fuente que la
+confirme. Se asumio "esquina en el origen" (igual que CYLINDER con
+O=0) y se compenso desplazando la traslacion en (-L/2, -W/2) rotado,
+con L=W=2000mm (cuerpo cortador deliberadamente enorme frente a los
+110mm de OD) para que un eventual error en esa suposicion tenga bajo
+impacto. Si el corte queda mal ubicado, esta es la primera hipotesis a
+revisar.
+
+Prueba real pendiente:
+  (testacpscript "HDPE_SEGMENTED_ELBOW")
+Resultado esperado: dos gajos huecos unidos por una sola cara de corte
+plana compartida -- SIN solape, SIN separacion, taladro interior
+continuo a traves de la junta.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+Si B3C-1 falla o el corte queda mal ubicado, revisar primero la
+suposicion de convencion de BOX antes que cualquier otra cosa. Si B3C-1
+pasa, avanzar a V0.3.1B3C-2 (aplicar el mismo principio a las otras dos
+juntas del codo) -- no antes.

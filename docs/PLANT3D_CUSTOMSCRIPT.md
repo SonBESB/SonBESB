@@ -537,14 +537,97 @@ pero no usado" (B3A) a afectar realmente el taladro (`radio_int_mm = (OD
 retrocompatibilidad que confirma que `hollow=False` sigue produciendo el
 contenido ejecutable ya validado de B3A.
 
+### V0.3.1B3B-2 — VALIDADO EN AUTOCAD PLANT 3D 2025 REAL
+
+```text
+(testacpscript "HDPE_SEGMENTED_ELBOW")
+-> seccion longitudinal real: conducto interior continuo desde el
+   tramo horizontal hasta el vertical, sin pared transversal que
+   bloquee el flujo
+
+V0.3.1B3B-2             = PASS
+B3B-2_SCRIPT_EXECUTION  = PASS
+B3B-2_HOLLOW_GEOMETRY   = PASS
+B3B-2_CONTINUOUS_BORE   = PASS
+HOLLOW_90_DEG_CHAIN     = PASS
+```
+
+Evidencia completa en `plant3d_validation/registration_result.txt`. NO
+se implemento B3B-3 (no hizo falta). El usuario señalo explicitamente
+que la seccion tambien muestra escalones/intersecciones locales en las
+uniones (esperado — los solapes de B3A/B3B, sin corte a inglete
+todavia), por lo que aun NO se declaran `CONSTANT_ID_AT_JOINTS`,
+`CONSTANT_THICKNESS_AT_JOINTS` ni `FABRICATION_GEOMETRY_VALIDATED` —
+esos quedan pendientes de los cortes reales (B3C).
+
+### V0.3.1B3C-1 — investigación y primera junta real a inglete (fixture aislado)
+
+Antes de escribir nada, se investigo la estrategia de corte real (regla
+explicita del usuario: *"no inventar firmas ni semantica"*). Hallazgos:
+
+- **`BOX(s, L, W, H)`** — firma literal confirmada por una respuesta
+  real de Autodesk Community, que ademas señala explicitamente que
+  `BOX` **no** acepta un parametro `O` (a diferencia de `CYLINDER`).
+- Un hilo real, *"Creation of miter bend without straight parts"*,
+  describe un script funcional completo para mitered bends usando
+  `ARC3DS(s, D, D2, R, A, S)` (un primitivo que construye TODA una
+  curva multi-segmento de una sola vez) y `PYRAMID(s, L, W, H, HT)`
+  como cuerpo cortador. **Investigado pero NO adoptado**: solo un
+  resumen del buscador fue alcanzable (`WebFetch` sigue bloqueado), sin
+  la matematica literal de los planos de corte, y no se pudo confirmar
+  si `ARC3DS` soporta segmentacion **asimetrica** (15°-30°-30°-15°,
+  la del Golden Case) o solo angulos uniformes por segmento — adoptarlo
+  a ciegas podria producir silenciosamente el codo equivocado. Se
+  mantiene el enfoque propio ya validado (`CYLINDER` por pieza,
+  B3A/B3B) y se usa `BOX` (no `PYRAMID`/`ARC3DS`) solo como cuerpo
+  cortador.
+
+`plant3d/generators/miter_joint_script_generator.py` (nuevo modulo,
+independiente de `segmented_elbow_script_generator.py` — no lo modifica
+ni lo importa) construye un fixture aislado: **solo Gajo 2 (30°) + Gajo
+3 (30°)**, la junta representativa del Golden Case, cada uno ya hueco
+(mismo patron `subtractFrom()`+`.erase()` confirmado en real por
+B3B-1/B3B-2), cortados contra su **plano bisectriz real compartido**
+(`cut_plane_end` de Gajo 2 == `cut_plane_start` de Gajo 3, verificado
+programaticamente antes de generar el script — no son dos planos
+derivados independientemente que podrian no coincidir).
+
+```python
+cutter_a = BOX(s, L=2000, W=2000, H=500).rotateY(theta_cut).translate(...)
+ext_a.subtractFrom(cutter_a)   # quita de Gajo 2 el lado hacia Gajo 3
+cutter_a.erase()
+
+cutter_b = BOX(s, L=2000, W=2000, H=500).rotateY(theta_cut + 180).translate(...)
+ext_b.subtractFrom(cutter_b)   # quita de Gajo 3 el lado hacia Gajo 2
+cutter_b.erase()
+```
+
+**Única suposición no confirmada, señalada explícitamente**: la
+convención de origen local de `BOX` (esquina vs. centrado) no tiene
+ninguna fuente que la confirme. Se asumió "esquina en el origen"
+(consistente con `CYLINDER`, el único primitivo que este proyecto ha
+confirmado realmente en hardware) y se compensó desplazando la
+traslación en `(-L/2, -W/2)` rotado por el mismo ángulo del cuerpo
+cortador — cálculo hecho en Python al generar el script, no una llamada
+nueva de Plant 3D. `L=W=2000mm` es deliberadamente enorme frente al
+OD de 110mm para que un eventual error en esa suposición tenga bajo
+impacto. Si el corte queda mal ubicado en la prueba real, esa es la
+primera hipótesis a revisar — el resultado, en cualquier caso, es
+evidencia nueva sobre la convención real de `BOX`.
+
+Generador cubierto por `tests/test_plant3d_miter_joint_script.py`,
+incluyendo una verificación independiente de la matemática de
+compensación de la caja cortadora y una comprobación de que ambos gajos
+comparten el mismo plano bisectriz antes de generar el script.
+
 ### Siguiente paso
 
-Probar V0.3.1B3B-2 en el mismo entorno (Plant 3D 2025):
-`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando el mismo codo de B3A
-(4 gajos, 3 solapes, ~90°, P1/P2 correctos) pero hueco en toda la cadena
-(OD=110/ID=96.8/THK=6.6). Registrar el resultado real en una nueva
-entrada de `plant3d_validation/registration_result.txt`. Si falla al
-aplicar `subtractFrom()` a las 6 piezas, aislar probando primero 2
-piezas huecas antes de las 6, sin tocar la matematica de posiciones ya
-validada por B3A. Solo si B3B-2 pasa se avanza a V0.3.1B3C (cortes a
-inglete reales, eliminando los solapes) — sin saltar etapas.
+Probar V0.3.1B3C-1 en el mismo entorno (Plant 3D 2025):
+`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando dos gajos huecos
+unidos por una sola cara de corte plana compartida — sin solape, sin
+separación, taladro interior continuo a través de la junta. Registrar
+el resultado real en una nueva entrada de
+`plant3d_validation/registration_result.txt`. Si falla o el corte queda
+mal ubicado, revisar primero la suposición de convención de `BOX`. Solo
+si B3C-1 pasa se avanza a V0.3.1B3C-2 (aplicar el mismo principio a las
+otras dos juntas del codo completo) — sin saltar etapas.
