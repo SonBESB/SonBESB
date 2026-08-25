@@ -1,13 +1,23 @@
-"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1: VALIDATION_MITER_JOINT_ONLY, una sola junta real a inglete.
+"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R1: VALIDATION_MITER_JOINT_ONLY, cutter corregido (BOX centrado).
 
 NO es el codo completo -- es un fixture aislado con SOLO Gajo 2 + Gajo 3
-(la junta representativa 30/30 del Golden Case), cada uno ya hueco
-(mismo patron subtractFrom()+erase() ya confirmado en real por B3B-1/
-B3B-2), cortados contra su plano bisectriz REAL compartido (calculado
-una sola vez por core/geometry/segmented_elbow.py, horneado aqui como
-constantes -- ningun calculo trigonometrico se repite en este script).
-NO modifica la cadena completa de 6 piezas de B3B-2 (queda intacta en
+(la misma junta representativa 30/30 del Golden Case que V0.3.1B3C-1),
+cada uno ya hueco (mismo patron subtractFrom()+erase() ya confirmado en
+real por B3B-1/B3B-2), cortados contra su plano bisectriz REAL
+compartido (calculado una sola vez por core/geometry/segmented_elbow.py,
+horneado aqui como constantes -- ningun calculo trigonometrico se repite
+en este script, y esa matematica NO se modifico). NO modifica la cadena
+completa de 6 piezas de B3B-2 (queda intacta en
 plant3d/generators/segmented_elbow_script_generator.py).
+
+V0.3.1B3C-1 (version anterior) fue API PASS / GEOMETRY FAIL en real: las
+operaciones booleanas con BOX ejecutaron sin error, pero los dos cortes
+no coincidian (gap/overcut). Causa: la suposicion "BOX origin = corner"
+era incorrecta. Esta version (R1) corrige SOLO el algoritmo de
+posicionamiento del cutter -- usa la convencion CENTRADA de BOX,
+respaldada por evidencia real independiente (ver
+plant3d/generators/miter_joint_script_generator.py para el detalle
+completo).
 
 Golden Case: DN110 PN10 90 grados
   OD=110 THK=6.6 ID=96.8 R=165
@@ -21,10 +31,7 @@ Evidencia real previa (ver plant3d_validation/registration_result.txt):
   V0.3.1B3A    (6 piezas + translate + rotateY!=90 + uniteWith)   = PASS
   V0.3.1B3B-1  (subtractFrom() aislado, 1 tubo recto hueco)       = PASS
   V0.3.1B3B-2  (subtractFrom() en las 6 piezas, conducto continuo) = PASS
-Este archivo (B3C-1) es el primero en usar BOX(...) como cuerpo
-cortador -- ver HONESTY CONTRACT en
-plant3d/generators/miter_joint_script_generator.py para la unica
-suposicion no confirmada (convencion de origen de BOX).
+  V0.3.1B3C-1  (BOX cutter, esquina-en-origen)  = API PASS / GEOMETRY FAIL
 """
 
 # ---------------------------------------------------------------------------
@@ -43,6 +50,8 @@ suposicion no confirmada (convencion de origen de BOX).
 #   - https://forums.autodesk.com/t5/autocad-plant-3d-forum/plant3d-python-libraries-assessment/td-p/12635204
 #   - https://forums.autodesk.com/t5/autocad-plant-3d-forum/creation-of-miter-bend-without-straight-parts/td-p/11005489
 #   - https://forums.autodesk.com/t5/autocad-plant-3d-forum/how-to-create-mitered-elbow-mitered-tee-amp-mitered-reducer-in/td-p/8188547
+#   - user-supplied Autodesk Community excerpt (V0.3.1B3C-1 real result message, no URL given): BOX(s, H=L, L=paB, W=A) with s.setPoint((-L/2.0,0,0),...)/s.setPoint((L/2.0,0,0),...); and BOX(...).translate((pa03*10.0, pa03*10.0, 0.0)).rotateZ(45.0) as a cutter with H=L=pa03*20.0
+#   - https://enginine.com/2025/11/11/custom-python-scripts-for-autocad-plant-3d-case-study-of-tubing-fittings-part-1/
 # ---------------------------------------------------------------------------
 from aqa.math import *
 from varmain.primitiv import *
@@ -51,8 +60,8 @@ from varmain.custom import *
 
 @activate(
     Group="Fitting",
-    TooltipShort="Junta a inglete unica (Gajo2/Gajo3) - fixture de validacion",
-    TooltipLong="V0.3.1B3C-1: una sola junta real a inglete entre dos gajos huecos, NO el codo completo. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
+    TooltipShort="Junta a inglete unica (Gajo2/Gajo3) - fixture de validacion R1",
+    TooltipLong="V0.3.1B3C-1R1: una sola junta real a inglete entre dos gajos huecos, cutter BOX corregido a convencion centrada. NO el codo completo. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
     LengthUnit="mm",
     Ports=2,
 )
@@ -63,14 +72,14 @@ from varmain.custom import *
 @param(LE=LENGTH, TooltipShort="Longitud tangente (no usada en este fixture)", TooltipLong="Le (mm) - Golden Case: 150. Este fixture no incluye los tramos Le.")
 @param(Z=LENGTH, TooltipShort="Distancia vertice-cara (posiciones ya horneadas)", TooltipLong="Z (mm) - Golden Case: 315.")
 def HDPE_SEGMENTED_ELBOW(s, OD=110, THK=6.6, R=165, LE=150, Z=315, OF=-1, K=1, **kw):
-    """VALIDATION_MITER_JOINT_ONLY -- Gajo2 + Gajo3 huecos, unidos por UNA junta real a inglete.
+    """VALIDATION_MITER_JOINT_ONLY -- Gajo2 + Gajo3 huecos, unidos por UNA junta real a inglete (cutter corregido).
 
     NO representa el codo DIN 16963 completo -- solo la junta 30/30
     (Gajo 2 / Gajo 3) del Golden Case. R/LE/Z se reciben pero las
     posiciones de las dos piezas y del plano de corte ya vienen
-    horneadas desde core/geometry/segmented_elbow.py. OD/THK SI afectan
-    el taladro real (radio_ext_mm/radio_int_mm abajo). Ver
-    docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+    horneadas desde core/geometry/segmented_elbow.py (matematica NO
+    modificada). OD/THK SI afectan el taladro real (radio_ext_mm/
+    radio_int_mm abajo). Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
     """
     radio_ext_mm = OD / 2.0
     radio_int_mm = (OD - 2 * THK) / 2.0
@@ -87,15 +96,16 @@ def HDPE_SEGMENTED_ELBOW(s, OD=110, THK=6.6, R=165, LE=150, Z=315, OF=-1, K=1, *
     ext_b.subtractFrom(int_b)
     int_b.erase()
 
-    # HONESTY NOTE: BOX(...) como cuerpo cortador, primera vez en este proyecto sin
-    # confirmacion de hardware -- ver HONESTY CONTRACT arriba en el modulo generador.
-    # cutter_a remueve de Gajo 2 el material mas alla del plano bisectriz (lado Gajo 3).
-    cutter_a = BOX(s, L=2000, W=2000, H=500).rotateY(45).translate((-755.434, -1000, 755.434))
+    # CORREGIDO en R1: BOX centrado (ver docstring del modulo). Mismo angulo
+    # rotateY(theta_cut) para AMBOS cutters -- solo el centro (translate)
+    # cambia de lado, seleccionando el semiespacio correcto para cada pieza.
+    # cutter_a: centro = joint_point + (H/2)*plane_normal -> quita el lado hacia Gajo 3.
+    cutter_a = BOX(s, L=2000, W=2000, H=500).rotateY(45).translate((128.449, 0, 225.104))
     ext_a.subtractFrom(cutter_a)
     cutter_a.erase()
 
-    # cutter_b remueve de Gajo 3 el material mas alla del plano bisectriz (lado Gajo 2).
-    cutter_b = BOX(s, L=2000, W=2000, H=500).rotateY(225).translate((658.779, -1000, -658.779))
+    # cutter_b: centro = joint_point - (H/2)*plane_normal -> quita el lado hacia Gajo 2.
+    cutter_b = BOX(s, L=2000, W=2000, H=500).rotateY(45).translate((-225.104, 0, -128.449))
     ext_b.subtractFrom(cutter_b)
     cutter_b.erase()
 
@@ -104,3 +114,9 @@ def HDPE_SEGMENTED_ELBOW(s, OD=110, THK=6.6, R=165, LE=150, Z=315, OF=-1, K=1, *
 
     s.setPoint((-122.295, 0, 5.62224), (-0.866025, -0, -0.5), 0.0)
     s.setPoint((-5.62224, 0, 122.295), (0.5, 0, 0.866025), 0.0)
+
+    # CALIBRATION_BOX_TEMPORARY -- no forma parte del codo, no se une ni se
+    # resta de nada. Tres dimensiones distintas (L=30, W=15, H=5) y sin
+    # rotar, lejos de la geometria real, para confirmar visualmente que eje
+    # mundial corresponde a cada parametro de BOX. Borrar una vez confirmado.
+    calibration_box = BOX(s, L=30, W=15, H=5).rotateY(0.0).translate((800, 800, 800))

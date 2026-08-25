@@ -501,3 +501,111 @@ Si B3C-1 falla o el corte queda mal ubicado, revisar primero la
 suposicion de convencion de BOX antes que cualquier otra cosa. Si B3C-1
 pasa, avanzar a V0.3.1B3C-2 (aplicar el mismo principio a las otras dos
 juntas del codo) -- no antes.
+
+===================================================================
+V0.3.1B3C-1 PROBADO EN AUTOCAD PLANT 3D 2025 REAL -- API PASS / GEOMETRY FAIL -- 2026-08-24
+===================================================================
+
+Comando ejecutado:
+  (testacpscript "HDPE_SEGMENTED_ELBOW")
+
+Resultado real: los dos tubos huecos se generaron correctamente y las
+operaciones booleanas con BOX se ejecutaron sin error. Sin embargo, la
+inspeccion isometrica, wireframe y longitudinal muestra que los dos
+extremos cortados NO comparten el mismo plano fisico -- existe un
+gap/overcut significativo.
+
+  B3C-1_SCRIPT_EXECUTION = PASS
+  BOX_API                = PASS
+  BOX_TRANSFORM          = PASS
+  SUBTRACTFROM_BOX       = PASS
+  HOLLOW_SEGMENTS        = PASS
+
+  COMMON_CUT_PLANE  = FAIL
+  NO_GAP            = FAIL
+  MITER_GEOMETRY    = FAIL
+  BOX_PLACEMENT     = NEEDS_CORRECTION
+
+CAUSA IDENTIFICADA: la suposicion "BOX origin = corner" (usada en la
+primera version de B3C-1) queda DESCARTADA. El usuario aporto evidencia
+real de scripts publicados en Autodesk Community que muestran BOX
+CENTRADO en su propio origen local, al menos en el eje H (ejemplo:
+BOX(s, H=L, ...) con puertos en (-L/2,0,0) y (L/2,0,0)), y un ejemplo de
+corte real (BOX(...).translate(...).rotateZ(45.0), .subtractFrom(...))
+donde el cuerpo cortador se traslada exactamente la mitad de su propia
+extension (pa03*10 para H=pa03*20) antes de rotar -- consistente con un
+origen centrado. Una busqueda independiente (WebSearch) corroboro el
+mismo patron: "BOX(s, L=W, W=H, H=D).translate((0, 0, H / 2.0))" descrito
+explicitamente como "centrado en H/2.0".
+
+No se modifico core/geometry/segmented_elbow.py, las centerlines, el
+punto de union, los ejes de segmento ni la matematica del plano de
+corte -- la causa esta aislada en el posicionamiento del cuerpo
+cortador, exactamente como identifico el usuario.
+
+Estado global: PLANT3D_VALIDATION_IN_PROGRESS -- NO PLANT3D_VALIDATED.
+
+Siguiente paso: V0.3.1B3C-1R1 -- mismo fixture (Gajo 2 + Gajo 3, junta
+30/30), corrigiendo SOLO el algoritmo de posicionamiento del cutter para
+usar la convencion centrada real (offset de H/2 desde el punto del
+plano, sin compensacion de esquina). Incluye un BOX de calibracion
+visible temporal (L/W/H distintos) para confirmar visualmente la
+orientacion de cada eje. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion
+V0.3.1.
+
+===================================================================
+Actualizacion V0.3.1B3C-1R1 (aun sin probar en real) -- 2026-08-24
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B3C-1R1
+(generate_single_miter_joint_script() en
+plant3d/generators/miter_joint_script_generator.py, corregido): MISMO
+fixture que B3C-1 (Gajo 2 + Gajo 3, junta 30/30), MISMO joint_point y
+plane_normal de core/geometry/segmented_elbow.py (sin modificar), SOLO
+cambio el algoritmo de posicionamiento del cutter.
+
+Nueva convencion (BOX centrado, no esquina-en-origen), respaldada por
+dos fuentes reales independientes:
+  1. Fragmento real de Autodesk Community aportado por el usuario:
+     BOX(s, H=L, L=paB, W=A) con s.setPoint((-L/2.0,0,0),...)/
+     s.setPoint((L/2.0,0,0),...) -- puertos en +-L/2 confirman centrado;
+     y BOX(...).translate((pa03*10.0, pa03*10.0, 0.0)).rotateZ(45.0)
+     como cutter con H=L=pa03*20.0 -- el offset es exactamente la mitad
+     de su propia extension.
+  2. WebSearch independiente (no inducido por el fragmento del usuario):
+     BOX(s, L=W, W=H, H=D).translate((0, 0, H / 2.0)) descrito
+     explicitamente como "centrado en H/2.0".
+
+Verificado numericamente (ver salida completa entregada al usuario antes
+de generar el script):
+  joint_point (Plant3D)  = (-48.327381, 0.0, 48.327381)
+  plane_normal (Plant3D) = (0.707107, 0.0, 0.707107)
+  centro cutter A        = (128.449314, 0.0, 225.104076)
+  centro cutter B        = (-225.104076, 0.0, -128.449314)
+  rotateY (ambos cutters)= 45.0 grados (mismo angulo, solo el centro cambia de lado)
+  cara cercana cutter A  = joint_point exacto (dot(X-joint_point, normal) = 0)
+  cara cercana cutter B  = joint_point exacto (dot(X-joint_point, normal) = 0)
+
+Se agrego un CALIBRATION_BOX_TEMPORARY (L=30/W=15/H=5mm, sin rotar,
+lejos de la geometria real, nunca unido ni restado) para confirmar
+visualmente la orientacion de cada eje si aun hiciera falta -- en vez
+de volver a inferirlo silenciosamente, tal como pidio el usuario.
+
+No se modifico core/geometry/segmented_elbow.py, las centerlines, el
+punto de union, los ejes de segmento ni la matematica del plano de
+corte. Limitado a Gajo 2 + Gajo 3 (una sola junta) -- no se avanza a
+B3C-2, Catalog Builder ni Spec Editor.
+
+Prueba real pendiente:
+  (testacpscript "HDPE_SEGMENTED_ELBOW")
+Resultado esperado (condiciones de aceptacion del usuario): mismo punto
+de union, mismo plano de corte, sin gap, sin overlap, pared exterior
+continua, taladro interior continuo.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+No avanzar a V0.3.1B3C-2 hasta que B3C-1R1 pase en hardware real. Si
+R1 tambien falla, la convencion de BOX ya no es la primera sospecha
+(esta corroborada dos veces) -- revisar si rotateY alcanza la
+orientacion deseada en 3D, usando el CALIBRATION_BOX_TEMPORARY incluido.

@@ -620,14 +620,113 @@ incluyendo una verificación independiente de la matemática de
 compensación de la caja cortadora y una comprobación de que ambos gajos
 comparten el mismo plano bisectriz antes de generar el script.
 
+### V0.3.1B3C-1 — API PASS / GEOMETRY FAIL en AutoCAD Plant 3D 2025 real
+
+```text
+(testacpscript "HDPE_SEGMENTED_ELBOW")
+-> los dos tubos huecos se generaron y las operaciones booleanas con
+   BOX ejecutaron SIN ERROR, pero las inspecciones isometrica,
+   wireframe y longitudinal muestran que los dos extremos cortados NO
+   comparten el mismo plano fisico -- gap/overcut significativo
+
+B3C-1_SCRIPT_EXECUTION = PASS   BOX_API           = PASS
+BOX_TRANSFORM           = PASS   SUBTRACTFROM_BOX  = PASS
+HOLLOW_SEGMENTS         = PASS
+
+COMMON_CUT_PLANE = FAIL   NO_GAP = FAIL   MITER_GEOMETRY = FAIL
+BOX_PLACEMENT = NEEDS_CORRECTION
+```
+
+Evidencia completa en `plant3d_validation/registration_result.txt`.
+**Causa identificada**: la suposición "BOX origin = corner" del
+`docs/PLANT3D_CUSTOMSCRIPT.md` anterior (y del código) era incorrecta.
+No se modificó `core/geometry/segmented_elbow.py`, las centerlines, el
+punto de unión ni la matemática del plano de corte — el problema estaba
+aislado, exactamente donde se esperaba, en el posicionamiento del
+cuerpo cortador.
+
+### V0.3.1B3C-1R1 — corrección: BOX centrado, no esquina-en-origen
+
+Nueva evidencia real, **dos fuentes independientes**, descarta la
+suposición anterior:
+
+1. Un fragmento real de Autodesk Community (aportado por el usuario):
+   `BOX(s, H=L, L=paB, W=A)` usado con
+   `s.setPoint((-L/2.0,0,0),...)` / `s.setPoint((L/2.0,0,0),...)` — los
+   puertos en el eje H están en ±L/2, lo que solo tiene sentido si el
+   `BOX` está centrado en su propio origen. Un segundo fragmento corta
+   con `BOX(...).translate((pa03*10.0, pa03*10.0, 0.0)).rotateZ(45.0)`
+   como cuerpo cortador con `H=L=pa03*20.0` — el desplazamiento es
+   exactamente la **mitad** de la extensión propia del cutter, patrón
+   que solo es coherente con un origen centrado.
+2. Una búsqueda independiente (`WebSearch`, no inducida por el
+   fragmento del usuario) encontró un tercer ejemplo, de otra fuente:
+   `BOX(s, L=W, W=H, H=D).translate((0, 0, H / 2.0))`, descrito
+   explícitamente como producir un cubo "centrado en H/2.0" — la misma
+   técnica.
+
+Con dos fuentes reales independientes de acuerdo, `BOX(s, L, W, H)` se
+trata ahora como centrado en `[-L/2,L/2] x [-W/2,W/2] x [-H/2,H/2]`.
+Esto simplifica drásticamente el posicionamiento: **ya no hace falta
+ninguna compensación de `L`/`W`** (el footprint de una caja centrada ya
+queda centrado en donde sea que se traslade su origen) — solo hay que
+colocar el centro de cada cutter en `joint_point ± (H/2)·plane_normal`,
+y **ambos cutters usan el mismo `rotateY(theta_cut)`** (antes se
+usaban ángulos opuestos con `+180`; ahora el semiespacio se elige
+solo con el `translate`, no con la rotación):
+
+```python
+# cutter_a: quita el lado hacia Gajo 3 (semiespacio +normal)
+cutter_a = BOX(s, L=2000, W=2000, H=500).rotateY(theta_cut).translate(joint_point + (H/2)*normal)
+ext_a.subtractFrom(cutter_a)
+cutter_a.erase()
+
+# cutter_b: quita el lado hacia Gajo 2 (semiespacio -normal)
+cutter_b = BOX(s, L=2000, W=2000, H=500).rotateY(theta_cut).translate(joint_point - (H/2)*normal)
+ext_b.subtractFrom(cutter_b)
+cutter_b.erase()
+```
+
+**Verificación numérica** (para el joint Gajo2/Gajo3, en coordenadas
+Plant 3D tras el intercambio Y/Z):
+
+| Cantidad | Valor |
+|---|---|
+| `joint_point` | `(-48.327381, 0.0, 48.327381)` |
+| `plane_normal` | `(0.707107, 0.0, 0.707107)` |
+| centro cutter A | `(128.449314, 0.0, 225.104076)` |
+| centro cutter B | `(-225.104076, 0.0, -128.449314)` |
+| `rotateY` (ambos) | `45.0°` |
+
+Comprobado algebraicamente (y cubierto por
+`tests/test_plant3d_miter_joint_script.py::test_both_cutter_near_faces_lie_exactly_on_the_joint_plane`)
+que la cara cercana de **ambos** cutters coincide exactamente con
+`joint_point`, satisfaciendo la condición literal pedida:
+`dot(X - joint_point, plane_normal) = 0`.
+
+**Calibración añadida**: por pedido explícito del usuario ("si todavía
+existe incertidumbre... crear primero un BOX visible de calibración, en
+vez de volver a inferirlo silenciosamente"), el script incluye un
+`CALIBRATION_BOX_TEMPORARY` — un `BOX(L=30, W=15, H=5)` sin rotar, lejos
+de la geometría real, nunca unido ni restado — para que sus tres
+dimensiones distintas permitan confirmar visualmente a qué eje del
+mundo corresponde cada parámetro de `BOX`, en vez de arriesgar otra
+suposición silenciosa si algo sigue sin cuadrar.
+
+Generador (mismo módulo, `plant3d/generators/miter_joint_script_generator.py`)
+cubierto por `tests/test_plant3d_miter_joint_script.py`, incluyendo la
+verificación algebraica de la ecuación del plano para ambos cutters.
+
 ### Siguiente paso
 
-Probar V0.3.1B3C-1 en el mismo entorno (Plant 3D 2025):
-`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando dos gajos huecos
-unidos por una sola cara de corte plana compartida — sin solape, sin
-separación, taladro interior continuo a través de la junta. Registrar
-el resultado real en una nueva entrada de
-`plant3d_validation/registration_result.txt`. Si falla o el corte queda
-mal ubicado, revisar primero la suposición de convención de `BOX`. Solo
-si B3C-1 pasa se avanza a V0.3.1B3C-2 (aplicar el mismo principio a las
-otras dos juntas del codo completo) — sin saltar etapas.
+Probar V0.3.1B3C-1R1 en el mismo entorno (Plant 3D 2025):
+`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando el mismo punto de
+unión, el mismo plano de corte, sin gap, sin overlap, pared exterior
+continua y taladro interior continuo. Registrar el resultado real en
+una nueva entrada de `plant3d_validation/registration_result.txt`. Si
+R1 también falla, la convención de `BOX` ya no es la primera sospecha
+(está corroborada dos veces) — revisar en su lugar si `rotateY` por sí
+solo alcanza la orientación deseada en 3D, apoyándose en el
+`CALIBRATION_BOX_TEMPORARY` incluido. Solo si B3C-1R1 pasa se avanza a
+V0.3.1B3C-2 (aplicar el mismo principio a las otras dos juntas del codo
+completo) — sin saltar etapas.

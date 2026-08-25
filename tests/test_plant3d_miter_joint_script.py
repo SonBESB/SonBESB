@@ -109,11 +109,11 @@ def test_cuts_each_piece_against_the_cutter_and_unites_afterward(golden):
     assert cut_b_idx < union_idx
 
 
-def test_cutter_rotations_are_opposite_180_degrees_apart(golden):
-    """cutter_a removes the +normal side from Gajo 2, cutter_b removes
-    the -normal side from Gajo 3 -- same rotateY axis, opposite
-    direction, achieved via a 180 degree offset (no new rotation axis
-    invented)."""
+def test_cutters_share_the_same_rotation_only_translate_differs(golden):
+    """Corrected R1 math: BOX is centered, so both cutters use the SAME
+    rotateY(theta_cut) -- only their translate CENTER differs, choosing
+    which half-space (+normal or -normal) each occupies. The old R0
+    approach (opposite rotations via +180) is no longer used."""
     params, geometry = golden
     result = generate_single_miter_joint_script(params, geometry)
     body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
@@ -122,35 +122,66 @@ def test_cutter_rotations_are_opposite_180_degrees_apart(golden):
     matches = re.findall(r"cutter_[ab] = BOX\(s, L=2000, W=2000, H=500\)\.rotateY\(([\-\d.]+)\)", body)
     assert len(matches) == 2
     theta_a, theta_b = float(matches[0]), float(matches[1])
-    assert math.isclose(abs(theta_b - theta_a), 180.0, abs_tol=1e-6)
+    assert math.isclose(theta_a, theta_b, abs_tol=1e-6)
 
 
-def test_cutter_translate_centers_on_the_plane_point_under_corner_assumption(golden):
-    """Verify the disclosed compensation math independently: rotating
-    the box's own (-L/2, -W/2, 0) local shift by the same theta and
-    adding it to the plane point must match what the generator emitted."""
+def test_cutter_centers_use_the_centered_box_convention(golden):
+    """Corrected R1 math: cutter center = joint_point +- (H/2)*plane_normal
+    (no L/W compensation at all, since a centered box's L/W footprint is
+    automatically centered on wherever its origin lands)."""
     params, geometry = golden
     result = generate_single_miter_joint_script(params, geometry)
 
     gajo2 = geometry.all_pieces[2]
     plane = gajo2.cut_plane_end
     plane_p3d = (plane.point[0], plane.point[2], plane.point[1])
+    normal_p3d = (plane.normal[0], plane.normal[2], plane.normal[1])
     theta_cut = math.degrees(math.atan2(plane.normal[0], plane.normal[1]))
 
-    def rotate_y(v, theta_deg):
-        theta = math.radians(theta_deg)
-        x, y, z = v
-        return (x * math.cos(theta) + z * math.sin(theta), y, -x * math.sin(theta) + z * math.cos(theta))
-
-    shift = (-1000.0, -1000.0, 0.0)
-    expected_a = tuple(round(plane_p3d[i] + rotate_y(shift, theta_cut)[i], 6) for i in range(3))
-    expected_b = tuple(round(plane_p3d[i] + rotate_y(shift, theta_cut + 180.0)[i], 6) for i in range(3))
+    half_h = 500.0 / 2.0
+    expected_a = tuple(round(plane_p3d[i] + half_h * normal_p3d[i], 6) for i in range(3))
+    expected_b = tuple(round(plane_p3d[i] - half_h * normal_p3d[i], 6) for i in range(3))
 
     def fmt(v):
         return "(" + ", ".join(f"{c:.6g}" for c in v) + ")"
 
     assert f".rotateY({theta_cut:.6g}).translate({fmt(expected_a)})" in result.source_code
-    assert f".rotateY({theta_cut + 180.0:.6g}).translate({fmt(expected_b)})" in result.source_code
+    assert f".rotateY({theta_cut:.6g}).translate({fmt(expected_b)})" in result.source_code
+
+
+def test_both_cutter_near_faces_lie_exactly_on_the_joint_plane(golden):
+    """The acceptance condition the user specified literally:
+    dot(X - joint_point, plane_normal) = 0 for the near face of both
+    cutters (center -+ (H/2)*plane_normal, undoing the swap back to our
+    own XY convention before checking the plane equation)."""
+    params, geometry = golden
+    gajo2 = geometry.all_pieces[2]
+    plane = gajo2.cut_plane_end
+    joint_point = plane.point
+    plane_normal = plane.normal
+
+    plane_p3d = (joint_point[0], joint_point[2], joint_point[1])
+    normal_p3d = (plane_normal[0], plane_normal[2], plane_normal[1])
+    half_h = 500.0 / 2.0
+    center_a = tuple(plane_p3d[i] + half_h * normal_p3d[i] for i in range(3))
+    center_b = tuple(plane_p3d[i] - half_h * normal_p3d[i] for i in range(3))
+    near_face_a = tuple(center_a[i] - half_h * normal_p3d[i] for i in range(3))
+    near_face_b = tuple(center_b[i] + half_h * normal_p3d[i] for i in range(3))
+
+    def unswap(v):
+        return (v[0], v[2], v[1])
+
+    def dot(a, b):
+        return sum(a[i] * b[i] for i in range(3))
+
+    def sub(a, b):
+        return tuple(a[i] - b[i] for i in range(3))
+
+    for near_face in (near_face_a, near_face_b):
+        near_face_our = unswap(near_face)
+        assert math.isclose(dot(sub(near_face_our, joint_point), plane_normal), 0.0, abs_tol=1e-9)
+        for i in range(3):
+            assert math.isclose(near_face_our[i], joint_point[i], abs_tol=1e-9)
 
 
 def test_does_not_touch_the_other_two_joints(golden):
@@ -184,10 +215,26 @@ def test_is_clearly_marked_not_the_full_elbow(golden):
     assert "NO es el codo completo" in result.source_code
 
 
-def test_warns_about_the_unconfirmed_box_origin_assumption(golden):
+def test_warns_about_the_real_r0_failure_and_corrected_convention(golden):
     params, geometry = golden
     result = generate_single_miter_joint_script(params, geometry)
-    assert any("BOX" in w and "NO esta confirmada" in w for w in result.warnings)
+    assert any("GEOMETRY FAIL" in w and "CENTRADA" in w for w in result.warnings)
+
+
+def test_includes_a_temporary_calibration_box_never_united_or_subtracted(golden):
+    """Per the user's explicit request: a small, distinctly-sized,
+    un-rotated calibration BOX far from the real geometry, to visually
+    confirm axis orientation instead of guessing silently again."""
+    params, geometry = golden
+    result = generate_single_miter_joint_script(params, geometry)
+    assert "CALIBRATION_BOX_TEMPORARY" in result.source_code
+    assert "calibration_box = BOX(s, L=30, W=15, H=5).rotateY(0.0).translate((800, 800, 800))" in result.source_code
+    # never consumed by any boolean operation
+    assert "calibration_box.subtractFrom" not in result.source_code
+    assert "subtractFrom(calibration_box)" not in result.source_code
+    assert "uniteWith(calibration_box)" not in result.source_code
+    assert "calibration_box.uniteWith" not in result.source_code
+    assert "calibration_box.erase()" not in result.source_code
 
 
 def test_cites_sources(golden):
