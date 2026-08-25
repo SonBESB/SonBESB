@@ -213,3 +213,74 @@ PLANTREGISTERCUSTOMSCRIPTS, cerrar y reabrir Plant 3D,
 registrar el resultado real en una nueva entrada fechada a continuacion
 de esta. Si pasa, avanzar a V0.3.1B3 (geometria real del codo, no
 antes).
+
+===================================================================
+V0.3.1B2 VALIDADO EN AUTOCAD PLANT 3D 2025 REAL -- 2026-08-24
+===================================================================
+
+Comando ejecutado:
+  (testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")
+
+Resultado real:
+  <Entity name: ...>
+
+Geometria correctamente ejecutada, sin errores. Version probada contenia:
+Ports=2, s.setPoint(P1), s.setPoint(P2), CYLINDER, rotateY -- sin cambios
+sobre la geometria de B1.
+
+  V0.3.1B2           = PASS
+  PORT_COUNT_2        = PASS
+  SETPOINT_P1         = PASS
+  SETPOINT_P2         = PASS
+  GEOMETRY_CREATION   = PASS
+  TESTACPSCRIPT_ENTITY_RETURN = PASS
+
+Nota (usuario): esto valida la EJECUCION de setPoint, todavia NO valida
+conexion fisica con Pipe, EndType, Catalog ni Spec -- eso viene despues
+(ver docs/PLANT3D_CATALOG_WORKFLOW.md / PLANT3D_SPEC_TEST.md /
+PLANT3D_MODEL_ACCEPTANCE.md, sin empezar todavia).
+
+Estado global: PLANT3D_VALIDATION_IN_PROGRESS -- NO PLANT3D_VALIDATED.
+
+Siguiente paso: V0.3.1B3A -- geometria real del codo DN110/PN10/90 (4
+gajos + 2 tramos Le, sin corte a inglete ni taladro interior todavia),
+consumiendo core/geometry/segmented_elbow.py. Ver
+docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1, para el detalle completo
+y las simplificaciones explicitamente reveladas.
+
+===================================================================
+Actualizacion V0.3.1B3A (aun sin probar en real) -- 2026-08-24
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B3A
+(generate_segmented_elbow_script() en
+plant3d/generators/segmented_elbow_script_generator.py): geometria REAL
+del codo DN110/PN10/90 (4 gajos 15-30-30-15 + 2 tramos Le), calculada
+una sola vez por core/geometry/segmented_elbow.py (ya probado, sin
+duplicar la trigonometria) y horneada como constantes en el script.
+
+Simplificacion revelada explicitamente (autorizada por el usuario): los
+6 tramos son CYLINDER rectos sin corte a inglete -- las 3 uniones
+internas son solapes de tapas redondas, no cortes planos a bisectriz
+(el script real de "mitered elbow" encontrado via WebSearch solo devolvio
+un resumen, no el codigo literal -- WebFetch sigue bloqueado). Tampoco
+incluye el taladro interior (THK/ID) -- eso es V0.3.1B3B.
+
+Primer uso en este proyecto de: translate(...), angulos rotateY distintos
+de 90 (82.5/60/30/7.5/0), y union de 6 piezas via uniteWith()+erase() --
+ninguno de los tres tiene confirmacion de hardware todavia (solo
+CYLINDER+rotateY(90)+setPoint la tienen, via B1/B2).
+
+Prueba real pendiente:
+  (testacpscript "HDPE_SEGMENTED_ELBOW")
+Resultado esperado: un codo visible con 4 gajos, 3 juntas internas
+(solapadas, no a inglete), OD=110, R=165, Le=150, Z=315, angulo total 90,
+P1/P2 en las caras reales.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+Si la union completa de 6 piezas falla, aislar probando primero una
+union de solo 2 piezas (por ejemplo pieza_0 + pieza_1) antes de las 6,
+siguiendo la misma disciplina de aislar una variable a la vez que
+funciono para B1/B2.

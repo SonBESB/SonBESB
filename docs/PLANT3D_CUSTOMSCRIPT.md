@@ -343,16 +343,105 @@ B2 no introduce ninguna API nueva sin confirmar: `Ports=N` y la forma de
 eso empieza recien en V0.3.1B3. Generador cubierto por las pruebas
 `test_b2_*` en `tests/test_plant3d_validation_script.py`.
 
+### V0.3.1B2 — VALIDADO EN AUTOCAD PLANT 3D 2025 REAL
+
+```text
+(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")
+-> <Entity name: ...>, sin errores
+
+V0.3.1B2                    = PASS
+PORT_COUNT_2                 = PASS
+SETPOINT_P1                  = PASS
+SETPOINT_P2                  = PASS
+GEOMETRY_CREATION            = PASS
+TESTACPSCRIPT_ENTITY_RETURN  = PASS
+```
+
+Evidencia completa en `plant3d_validation/registration_result.txt`. El
+usuario señalo explicitamente: esto valida la EJECUCION de `setPoint`,
+todavia NO valida conexion fisica con Pipe, EndType, Catalog ni Spec —
+eso viene despues de que la geometria real del codo (V0.3.1B3) tambien
+pase.
+
+### V0.3.1B3A — geometria real del codo (exterior, sin corte a inglete)
+
+`plant3d/generators/segmented_elbow_script_generator.py` (nuevo modulo,
+distinto de `validation_script_generator.py` porque este SI consume
+`ElbowParameters`/`SegmentedElbowGeometry` reales) construye por primera
+vez el codo DN110/PN10/90 completo: 4 gajos (15°-30°-30°-15°) + 2 tramos
+Le, calculados UNA SOLA VEZ por `core/geometry/segmented_elbow.py` (ya
+probado, sin duplicar la trigonometria) y horneados como constantes
+literales en el `.py` generado — el script en si no reimporta
+`core.geometry...` (no estaria disponible dentro de Plant 3D) ni
+recalcula nada.
+
+**Simplificacion revelada explicitamente** (autorizada por el usuario:
+*"si resulta necesario, dividir B3A/B3B, no esconder esa
+simplificacion"*): los 6 tramos son `CYLINDER` rectos SIN corte a
+inglete — las 3 uniones internas entre gajos son solapes de cilindros de
+tapa redonda, no cortes planos a bisectriz. Un hilo real de Autodesk
+Community titulado *"Creation of miter bend without straight parts"*
+describe un script funcional para esto (usando `ARC3DS`/`PYRAMID` +
+`rotateX`/`rotateZ` + `translate` + `subtractFrom`), pero `WebFetch`
+sigue bloqueado en este sandbox — solo se pudo leer un resumen generado
+por el motor de busqueda, nunca el codigo literal ni la matematica de
+los planos de corte. Inventar esa matematica a partir de un resumen
+violaria la regla NO INVENTAR API DE PLANT 3D, asi que el corte a
+inglete real queda diferido hasta que ese hilo (o una fuente equivalente)
+se pueda leer completo. Tampoco incluye el taladro interior (THK/ID) —
+eso es V0.3.1B3B, deliberadamente separado para poder aislar un fallo a
+la union de 6 piezas (este archivo) o a la sustraccion hueca (B3B) por
+separado.
+
+**Composicion rotate/translate**: el unico ejemplo real literal de
+`.translate(...)` encontrado lo encadena inmediatamente despues de
+`CYLINDER(...)`, sin rotacion en esa misma cadena — no hay evidencia de
+si Plant 3D compone rotar-luego-trasladar igual que trasladar-luego-rotar
+(en general no son lo mismo, salvo que la rotacion pivote sobre la
+posicion actual del objeto). Para no adivinar, cada pieza se construye
+como `CYLINDER(...).rotateY(theta).translate(inicio)`: rotar primero,
+mientras la pieza todavia esta en el origen local (ahi "pivotar sobre el
+objeto" y "pivotar sobre el origen global" son lo mismo), y trasladar
+una sola vez a su posicion final (ahi "mover a un punto absoluto" y
+"mover por un desplazamiento" tambien coinciden, porque la posicion
+previa a trasladar YA es el origen). Ver el docstring del modulo para el
+detalle completo.
+
+**Mapeo de coordenadas**: `core/geometry/segmented_elbow.py` construye
+el codo en su propio plano XY (Z siempre 0). La unica rotacion con
+confirmacion de hardware (`rotateY(90)`, confirmada por B1/B2) alcanza
+el plano XZ de Plant 3D, no el XY. En vez de adivinar como componen
+`rotateY`+`rotateZ` juntos, este generador intercambia las componentes Y
+y Z de cada punto/direccion (nuestro `(x, y, 0)` -> Plant 3D
+`(x, 0, y)`), reproduciendo el codo completo usando solo el eje de
+rotacion ya confirmado. Es una decision de este generador, no una
+llamada a la API de Plant 3D — no necesita cita.
+
+Verificado matematicamente (sin depender de Plant 3D real) que la
+cadena de 6 piezas es geometricamente continua: el punto final de cada
+pieza (inicio + longitud·direccion tras `rotateY`) coincide exactamente
+con el punto de `translate` de la siguiente — cubierto por
+`tests/test_plant3d_segmented_elbow_script.py::test_piece_chain_is_geometrically_continuous`.
+
+**Elementos usados por primera vez, sin confirmacion de hardware
+todavia**: `translate(...)`, angulos de `rotateY` distintos de 90°
+(82.5°/60°/30°/7.5°/0°), y union de 6 piezas via `uniteWith()` +
+`.erase()` (el patron `.erase()` esta confirmado para
+`subtractFrom()`/`intersectWith()`; para `uniteWith()` es una inferencia
+por analogia, sin cita literal propia — sinalado explicitamente en los
+`warnings` del generador).
+
+Generador cubierto por `tests/test_plant3d_segmented_elbow_script.py`.
+
 ### Siguiente paso
 
-Probar V0.3.1B2 en el mismo entorno (Plant 3D 2025):
-`(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")`, esperando
-el mismo `<Entity name: ...>` y cilindro visible de B1, ahora con P1/P2
-tambien definidos. Registrar el resultado real en una nueva entrada de
-`plant3d_validation/registration_result.txt`. Solo si B2 pasa se avanza
-a V0.3.1B3 (geometria real del codo DN110/PN10/90°, 4 gajos
-15°-30°-30°-15°, con el mapeo P1/P2 real vía
-`plant3d/generators/port_mapping.py`) — sin saltar etapas. La version
-con puertos de V0.3.1A (`generate_validation_script()`, aun no probada
-en real) sigue disponible en el generador por si hiciera falta un punto
-de comparacion.
+Probar V0.3.1B3A en el mismo entorno (Plant 3D 2025):
+`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando un codo visible con 4
+gajos, 3 juntas internas (solapadas, no a inglete), OD=110, R=165,
+Le=150, Z=315, angulo total 90°, P1/P2 en las caras reales. Registrar el
+resultado real en una nueva entrada de
+`plant3d_validation/registration_result.txt`. Si la union de 6 piezas
+falla, aislar probando primero una union de solo 2 piezas antes de las
+6 (misma disciplina que funciono para B1/B2). Solo si B3A pasa se
+avanza a V0.3.1B3B (taladro interior via `subtractFrom`, ID=96.8mm) y,
+mas adelante, al corte a inglete real — sin saltar etapas.
