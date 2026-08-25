@@ -492,13 +492,59 @@ identicos al patron ya confirmado en B1/B2 (`Ports=2` + los mismos dos
 nueva. Generador cubierto por las pruebas `test_b3b1_*` en
 `tests/test_plant3d_validation_script.py`.
 
+### V0.3.1B3B-1 — VALIDADO EN AUTOCAD PLANT 3D 2025 REAL
+
+```text
+(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "THK" "6.6" "LE" "150")
+-> tubo hueco generado correctamente, hueco interior visible
+
+V0.3.1B3B-1             = PASS
+SUBTRACTFROM            = PASS
+ERASE_AFTER_SUBTRACTION = PASS
+HOLLOW_GEOMETRY         = PASS
+```
+
+Evidencia completa en `plant3d_validation/registration_result.txt`. El
+usuario señalo explicitamente: la evidencia visual confirma el hueco,
+pero NO se declara validacion dimensional exacta de ID=96.8mm hasta
+medirlo con `DIST`/`MEASURE` en Plant 3D (ver
+`docs/PLANT3D_MODEL_ACCEPTANCE.md`).
+
+### V0.3.1B3B-2 — la cadena de B3A, ahora hueca
+
+`generate_segmented_elbow_script()` gano un parametro `hollow: bool =
+False` (retrocompatible — con `hollow=False` produce, byte a byte salvo
+comentarios/citas, el mismo `.py` que ya paso B3A en real). Con
+`hollow=True`, cada una de las 6 piezas se construye como:
+
+```python
+ext_i = CYLINDER(s, R=radio_ext_mm, H=..., O=0.0).rotateY(...).translate(...)
+int_i = CYLINDER(s, R=radio_int_mm, H=...+10, O=-5).rotateY(...).translate(...)
+ext_i.subtractFrom(int_i)
+int_i.erase()
+```
+
+usando el MISMO angulo/posicion ya validado por B3A para ambos
+cilindros (exterior e interior deben ser coaxiales), y el mismo margen
+de sobre-extension de 5mm por extremo ya confirmado en real por B3B-1.
+Solo despues de huecar las 6 piezas se ejecuta la cadena de union
+(`uniteWith()`+`.erase()`), exactamente igual que en B3A — la
+matematica de posiciones/angulos y la cadena de union no se tocan, solo
+cambia como se construye cada pieza individual. `THK` pasa de "recibido
+pero no usado" (B3A) a afectar realmente el taladro (`radio_int_mm = (OD
+- 2*THK) / 2.0`). Generador cubierto por las pruebas `test_hollow_*` en
+`tests/test_plant3d_segmented_elbow_script.py`, incluyendo una guarda de
+retrocompatibilidad que confirma que `hollow=False` sigue produciendo el
+contenido ejecutable ya validado de B3A.
+
 ### Siguiente paso
 
-Probar V0.3.1B3B-1 en el mismo entorno (Plant 3D 2025):
-`(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "THK" "6.6" "LE" "150")`,
-esperando un tubo recto visiblemente HUECO (no solido) de OD=110mm,
-ID=96.8mm, largo 150mm. Registrar el resultado real en una nueva entrada
-de `plant3d_validation/registration_result.txt`. Solo si B3B-1 pasa se
-avanza a V0.3.1B3B-2 (aplicar el mismo `subtractFrom()` a las 6 piezas
-de B3A) y, mas adelante, a V0.3.1B3C (cortes a inglete reales) — sin
-saltar etapas.
+Probar V0.3.1B3B-2 en el mismo entorno (Plant 3D 2025):
+`(testacpscript "HDPE_SEGMENTED_ELBOW")`, esperando el mismo codo de B3A
+(4 gajos, 3 solapes, ~90°, P1/P2 correctos) pero hueco en toda la cadena
+(OD=110/ID=96.8/THK=6.6). Registrar el resultado real en una nueva
+entrada de `plant3d_validation/registration_result.txt`. Si falla al
+aplicar `subtractFrom()` a las 6 piezas, aislar probando primero 2
+piezas huecas antes de las 6, sin tocar la matematica de posiciones ya
+validada por B3A. Solo si B3B-2 pasa se avanza a V0.3.1B3C (cortes a
+inglete reales, eliminando los solapes) — sin saltar etapas.

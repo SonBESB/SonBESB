@@ -104,6 +104,7 @@ SOURCE_CITATIONS = (
     # subtractFrom/intersectWith NOT used yet, reserved for B3B/mitering):
     "https://forums.autodesk.com/t5/autocad-plant-3d-forum/rotate-have-some-problems-with-python/td-p/10782031",
     "https://forums.autodesk.com/t5/autocad-plant-3d-forum/custom-scripts/td-p/8038308",
+    "https://docplayer.net/38668628-Annex-b-creating-custom-component-scripts-in-plant-3d.html",
     # Real miter-bend script exists here (ARC3DS/PYRAMID + subtractFrom)
     # but only a search-summary was reachable, not the literal code --
     # cited so the next investigator goes straight to it instead of
@@ -129,19 +130,37 @@ def _fmt_vec(v: Tuple[float, float, float]) -> str:
     return "(" + ", ".join(f"{round(c, 6):.6g}" for c in v) + ")"
 
 
+_INNER_CUT_OVERHANG_MM = 5.0  # same disclosed CAD margin as V0.3.1B3B-1
+
+
 def generate_segmented_elbow_script(
     params: ElbowParameters,
     geometry: SegmentedElbowGeometry,
     script_name: str = DEFAULT_SCRIPT_NAME,
+    hollow: bool = False,
 ) -> GeneratedElbowScript:
     """Bakes geometry.all_pieces (already computed by
     core/geometry/segmented_elbow.py) into literal CYLINDER/rotateY/
-    translate calls, united into one exterior solid, plus the two real
-    ports. Deterministic: identical (params, geometry, script_name)
+    translate calls, united into one solid, plus the two real ports.
+    Deterministic: identical (params, geometry, script_name, hollow)
     always produce byte-identical source_code.
+
+    hollow=False (V0.3.1B3A, real-hardware PASS): each piece is a solid
+    CYLINDER -- see plant3d_validation/registration_result.txt.
+
+    hollow=True (V0.3.1B3B-2): each piece becomes an (outer CYLINDER)
+    .subtractFrom(inner CYLINDER) hollow tube BEFORE the 6 pieces are
+    united -- exactly the per-piece order the user specified, and the
+    same subtractFrom()/erase() pattern already confirmed for real by
+    V0.3.1B3B-1's isolated single-tube test, using the same disclosed
+    axial overhang on the inner cutting cylinder. The uniteWith()+erase()
+    chain and the rotateY/translate math are completely untouched from
+    the already-PASSed B3A version -- hollow=True only changes how each
+    individual piece is built, not how the 6 pieces are combined.
     """
     warnings: List[str] = []
     pieces = geometry.all_pieces
+    inside_diameter_mm = params.od_mm - 2 * params.thickness_mm
 
     piece_lines = []
     var_names = []
@@ -153,15 +172,27 @@ def generate_segmented_elbow_script(
                 "this generator assumes a planar (Z=0) bend, per "
                 "core/geometry/segmented_elbow.py's own documented construction."
             )
-        theta_deg = math.degrees(math.atan2(dx, dy))
-        start_p3d = _swap_yz(piece.axis_start)
-        var = f"pieza_{i}"
+        theta_deg = round(math.degrees(math.atan2(dx, dy)), 6)
+        start_vec = _fmt_vec(_swap_yz(piece.axis_start))
+        length_mm = round(piece.length_mm, 6)
+        var = f"ext_{i}" if hollow else f"pieza_{i}"
         var_names.append(var)
-        piece_lines.append(
-            f"    {var} = CYLINDER(s, R=radio_mm, H={round(piece.length_mm, 6):.6g}, O=0.0)"
-            f".rotateY({round(theta_deg, 6):.6g}).translate({_fmt_vec(start_p3d)})"
-            f"  # {piece.label}"
-        )
+        if not hollow:
+            piece_lines.append(
+                f"    {var} = CYLINDER(s, R=radio_mm, H={length_mm:.6g}, O=0.0)"
+                f".rotateY({theta_deg:.6g}).translate({start_vec})  # {piece.label}"
+            )
+        else:
+            int_var = f"int_{i}"
+            overhang_h = round(piece.length_mm + 2 * _INNER_CUT_OVERHANG_MM, 6)
+            piece_lines.append(
+                f"    {var} = CYLINDER(s, R=radio_ext_mm, H={length_mm:.6g}, O=0.0)"
+                f".rotateY({theta_deg:.6g}).translate({start_vec})  # {piece.label} (exterior)\n"
+                f"    {int_var} = CYLINDER(s, R=radio_int_mm, H={overhang_h:.6g}, O=-{_INNER_CUT_OVERHANG_MM:g})"
+                f".rotateY({theta_deg:.6g}).translate({start_vec})  # {piece.label} (interior, taladro)\n"
+                f"    {var}.subtractFrom({int_var})\n"
+                f"    {int_var}.erase()"
+            )
 
     union_lines = []
     for var in var_names[1:]:
@@ -183,17 +214,34 @@ def generate_segmented_elbow_script(
         "queja de un objeto fantasma o de una llamada .erase() invalida, esa es "
         "la primera hipotesis a revisar."
     )
-    warnings.append(
-        "Union de 6 piezas + angulos rotateY distintos de 90 (82.5/60/30/7.5/0) "
-        "nunca antes probados en este entorno real -- solo rotateY(90) tiene "
-        "confirmacion de hardware (V0.3.1B1/B2). Si falla, aislar probando "
-        "primero union de solo 2 piezas antes de las 6."
-    )
+    if not hollow:
+        warnings.append(
+            "Union de 6 piezas + angulos rotateY distintos de 90 (82.5/60/30/7.5/0) "
+            "nunca antes probados en este entorno real -- solo rotateY(90) tiene "
+            "confirmacion de hardware (V0.3.1B1/B2). Si falla, aislar probando "
+            "primero union de solo 2 piezas antes de las 6."
+        )
+    else:
+        warnings.append(
+            "subtractFrom()+erase() por pieza SI tiene confirmacion de hardware "
+            "real (V0.3.1B3B-1, tubo recto aislado) -- lo nuevo aqui es aplicarlo "
+            "6 veces seguidas dentro de la misma cadena ya validada de B3A "
+            "(uniteWith/rotateY/translate). Si falla al aplicarlo a toda la "
+            "cadena, aislar probando primero 2 piezas huecas antes de las 6, "
+            "sin tocar la matematica de posiciones."
+        )
+        warnings.append(
+            "El taladro de cada pieza se sobre-extiende "
+            f"{_INNER_CUT_OVERHANG_MM:g}mm por extremo (mismo margen de modelado "
+            "usado y confirmado en V0.3.1B3B-1) -- esto tambien deberia dejar el "
+            "taladro continuo a traves de los solapes entre gajos, aunque eso no "
+            "esta confirmado hasta verlo en Plant 3D real."
+        )
     warnings.append(
         "GEOMETRIA APROXIMADA: los 6 tramos son cilindros rectos sin corte a "
         "inglete -- las 3 juntas internas entre gajos son solapes de tapas "
         "redondas, no cortes planos a bisectriz. Ver docstring del modulo para "
-        "por que (miter real diferido a B3-cortes, pendiente de una fuente "
+        "por que (miter real diferido a V0.3.1B3C, pendiente de una fuente "
         "citable completa)."
     )
 
@@ -201,9 +249,12 @@ def generate_segmented_elbow_script(
     pieces_block = "\n".join(piece_lines)
     union_block = "\n".join(union_lines)
 
-    source = f'''"""{script_name}.py — V0.3.1B3A: geometria real del codo (exterior, sin corte a inglete).
-
-APROXIMACION DISCLOSED (ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1):
+    if not hollow:
+        version_label = "V0.3.1B3A"
+        header_summary = (
+            "geometria real del codo (exterior, sin corte a inglete)"
+        )
+        header_body = f'''APROXIMACION DISCLOSED (ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1):
 los 4 gajos + 2 tramos Le se construyen como CYLINDER rectos, posicionados
 y orientados en sus posiciones/angulos REALES (calculados una sola vez por
 core/geometry/segmented_elbow.py, horneados aqui como constantes -- ningun
@@ -224,7 +275,74 @@ Evidencia real previa (ver plant3d_validation/registration_result.txt):
   V0.3.1B2 (mismo + Ports=2 + 2x s.setPoint)                  = PASS
 Esta version (B3A) es la primera en usar: translate(...), angulos
 rotateY != 90, y union de 6 piezas via uniteWith() -- ninguno de estos
-tres elementos tiene confirmacion de hardware todavia.
+tres elementos tiene confirmacion de hardware todavia.'''
+        activate_tooltip_short = "Codo HDPE segmentado (geometria exterior, sin corte a inglete)"
+        activate_tooltip_long = (
+            f"{version_label}: codo DIN 16963 DN110/PN10/90 -- geometria exterior real "
+            "(4 gajos + 2 tramos Le), sin corte a inglete ni taladro interior todavia."
+        )
+        thk_short = "Espesor de pared (no usado en B3A)"
+        thk_long = "Espesor (mm) - reservado para V0.3.1B3B (taladro interior)"
+        radio_setup = "    radio_mm = OD / 2.0\n"
+        func_docstring = f'''"""V0.3.1B3A -- geometria exterior real del codo, sin corte a inglete ni taladro.
+
+    ANGLE se mantiene fijo en 90 grados (no se agrega como @param): ningun
+    tipo de parametro Plant 3D para angulos fue confirmado en la
+    investigacion de V0.3 (solo LENGTH). THK/R/LE/Z se reciben (mismos
+    nombres/defaults del Golden Case) pero las posiciones de los 6 tramos
+    ya vienen horneadas desde core/geometry/segmented_elbow.py para
+    R={params.radius_mm:g}/LE={params.le_mm:g}/Z={geometry.z_mm:g} -- cambiar R/LE/Z en vivo no
+    recalcula la geometria todavia; solo OD afecta el radio real del tubo
+    (radio_mm abajo). Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+    """'''
+    else:
+        version_label = "V0.3.1B3B-2"
+        header_summary = "codo hueco (6 piezas, sin corte a inglete)"
+        header_body = f'''APROXIMACION DISCLOSED (ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1):
+misma cadena de 6 piezas de V0.3.1B3A (ya PASS real: rotateY/translate/
+uniteWith/erase), pero cada pieza ahora es (cilindro exterior)
+.subtractFrom(cilindro interior) ANTES de unirse -- el mismo patron
+subtractFrom()+erase() ya confirmado en real por V0.3.1B3B-1 (tubo recto
+aislado), aplicado 6 veces. Las 3 uniones internas SIGUEN siendo solapes
+de tapas redondas, NO cortes a inglete (eso es V0.3.1B3C, todavia sin
+implementar -- ver docstring del modulo).
+
+Golden Case: DN{params.dn_mm:g} {params.pn} {params.angle_deg:g} grados
+  OD={params.od_mm:g} THK={params.thickness_mm:g} ID={round(inside_diameter_mm, 6):g} R={params.radius_mm:g}
+  LE={params.le_mm:g} Z={geometry.z_mm:g}
+  Segmentos: {params.segment_configuration.segment_angles_deg if params.segment_configuration else None}
+
+Evidencia real previa (ver plant3d_validation/registration_result.txt):
+  V0.3.1B1    (CYLINDER+rotateY(90), Ports=1, sin setPoint)     = PASS
+  V0.3.1B2    (mismo + Ports=2 + 2x s.setPoint)                 = PASS
+  V0.3.1B3A   (6 piezas + translate + rotateY!=90 + uniteWith)  = PASS
+  V0.3.1B3B-1 (subtractFrom() aislado, 1 tubo recto hueco)      = PASS
+Esta version (B3B-2) es la primera en combinar subtractFrom() con la
+cadena de 6 piezas -- ninguna de las piezas individuales de B3A fue
+huecada todavia en real.'''
+        activate_tooltip_short = "Codo HDPE segmentado hueco (sin corte a inglete)"
+        activate_tooltip_long = (
+            f"{version_label}: codo DIN 16963 DN110/PN10/90 -- geometria hueca real "
+            "(4 gajos + 2 tramos Le, OD/ID/THK), sin corte a inglete todavia."
+        )
+        thk_short = "Espesor de pared (usado para el taladro)"
+        thk_long = "Espesor (mm) - Golden Case: {:g}. ID = OD - 2*THK.".format(params.thickness_mm)
+        radio_setup = "    radio_ext_mm = OD / 2.0\n    radio_int_mm = (OD - 2 * THK) / 2.0\n"
+        func_docstring = f'''"""V0.3.1B3B-2 -- codo hueco real (6 piezas), sin corte a inglete todavia.
+
+    ANGLE se mantiene fijo en 90 grados (mismo motivo que B3A: ningun tipo
+    de parametro Plant 3D para angulos fue confirmado). R/LE/Z se reciben
+    (mismos nombres/defaults del Golden Case) pero las posiciones de los
+    6 tramos ya vienen horneadas desde core/geometry/segmented_elbow.py
+    para R={params.radius_mm:g}/LE={params.le_mm:g}/Z={geometry.z_mm:g} -- cambiar R/LE/Z en vivo
+    no recalcula la geometria todavia. OD y THK SI afectan el taladro
+    real de cada pieza (radio_ext_mm/radio_int_mm abajo). Ver
+    docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+    """'''
+
+    source = f'''"""{script_name}.py — {version_label}: {header_summary}.
+
+{header_body}
 """
 
 # ---------------------------------------------------------------------------
@@ -239,31 +357,20 @@ from varmain.custom import *
 
 @activate(
     Group="Fitting",
-    TooltipShort="Codo HDPE segmentado (geometria exterior, sin corte a inglete)",
-    TooltipLong="V0.3.1B3A: codo DIN 16963 DN110/PN10/90 -- geometria exterior real (4 gajos + 2 tramos Le), sin corte a inglete ni taladro interior todavia.",
+    TooltipShort="{activate_tooltip_short}",
+    TooltipLong="{activate_tooltip_long}",
     LengthUnit="mm",
     Ports=2,
 )
 @group("MainDimensions")
 @param(OD=LENGTH, TooltipShort="Diametro exterior", TooltipLong="OD (mm) - Golden Case: {params.od_mm:g}", Ask4Dist=True)
-@param(THK=LENGTH, TooltipShort="Espesor de pared (no usado en B3A)", TooltipLong="Espesor (mm) - reservado para V0.3.1B3B (taladro interior)")
+@param(THK=LENGTH, TooltipShort="{thk_short}", TooltipLong="{thk_long}")
 @param(R=LENGTH, TooltipShort="Radio de curvatura (posiciones ya horneadas)", TooltipLong="R (mm) - Golden Case: {params.radius_mm:g}. Cambiar este valor en vivo NO recalcula la geometria (evita reimplementar trigonometria en Plant 3D).")
 @param(LE=LENGTH, TooltipShort="Longitud tangente (posiciones ya horneadas)", TooltipLong="Le (mm) - Golden Case: {params.le_mm:g}. Mismo aviso que R.")
 @param(Z=LENGTH, TooltipShort="Distancia vertice-cara (posiciones ya horneadas)", TooltipLong="Z (mm) - Golden Case: {geometry.z_mm:g}. Mismo aviso que R.")
 def {script_name}(s, OD={params.od_mm:g}, THK={params.thickness_mm:g}, R={params.radius_mm:g}, LE={params.le_mm:g}, Z={geometry.z_mm:g}, OF=-1, K=1, **kw):
-    """V0.3.1B3A -- geometria exterior real del codo, sin corte a inglete ni taladro.
-
-    ANGLE se mantiene fijo en 90 grados (no se agrega como @param): ningun
-    tipo de parametro Plant 3D para angulos fue confirmado en la
-    investigacion de V0.3 (solo LENGTH). THK/R/LE/Z se reciben (mismos
-    nombres/defaults del Golden Case) pero las posiciones de los 6 tramos
-    ya vienen horneadas desde core/geometry/segmented_elbow.py para
-    R=165/LE=150/Z=315 -- cambiar R/LE/Z en vivo no recalcula la
-    geometria todavia; solo OD afecta el radio real del tubo (radio_mm
-    abajo). Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
-    """
-    radio_mm = OD / 2.0
-
+    {func_docstring}
+{radio_setup}
 {pieces_block}
 
 {union_block}

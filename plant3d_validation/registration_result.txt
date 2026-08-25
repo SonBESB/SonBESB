@@ -359,3 +359,61 @@ PLANTREGISTERCUSTOMSCRIPTS, cerrar y reabrir Plant 3D,
 y registrar el resultado real en una nueva entrada fechada a
 continuacion de esta. Si pasa, avanzar a V0.3.1B3B-2 (aplicar el mismo
 subtractFrom() a las 6 piezas de B3A) -- no antes.
+
+===================================================================
+V0.3.1B3B-1 VALIDADO EN AUTOCAD PLANT 3D 2025 REAL -- 2026-08-24
+===================================================================
+
+Comando ejecutado:
+  (testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "THK" "6.6" "LE" "150")
+
+Resultado real: Plant 3D genero correctamente un tubo hueco (evidencia
+visual del hueco interior confirmada). Nota del usuario: todavia NO se
+declara validacion dimensional exacta de ID=96.8mm hasta medirlo
+posteriormente en Plant 3D (DIST/MEASURE, ver
+docs/PLANT3D_MODEL_ACCEPTANCE.md).
+
+  V0.3.1B3B-1              = PASS
+  SUBTRACTFROM             = PASS
+  ERASE_AFTER_SUBTRACTION  = PASS
+  HOLLOW_GEOMETRY          = PASS
+
+Estado global: PLANT3D_VALIDATION_IN_PROGRESS -- NO PLANT3D_VALIDATED.
+
+Siguiente paso: V0.3.1B3B-2 -- aplicar el mismo subtractFrom() a cada
+una de las 6 piezas de la cadena de B3A (ya PASS real), manteniendo
+rotateY/translate/uniteWith/erase/P1P2 sin cambios. Ver
+docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+
+===================================================================
+Actualizacion V0.3.1B3B-2 (aun sin probar en real) -- 2026-08-24
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B3B-2
+(generate_segmented_elbow_script(params, geometry, hollow=True) en
+plant3d/generators/segmented_elbow_script_generator.py): la MISMA cadena
+de 6 piezas de B3A (rotateY/translate/uniteWith/erase, ya PASS real),
+pero cada pieza ahora se construye como (cilindro exterior)
+.subtractFrom(cilindro interior) ANTES de unirse -- el mismo patron
+subtractFrom()+erase() ya confirmado en real por B3B-1, aplicado 6 veces
+(una por pieza), con el mismo margen de sobre-extension de 5mm por
+extremo en cada taladro. La cadena de union (uniteWith/erase) y el
+mapeo de posiciones/angulos NO se tocaron -- solo cambia como se
+construye cada pieza individual.
+
+OD=110, THK=6.6, ID=96.8 (Golden Case). Puertos P1/P2 identicos a B3A
+(sin cambios).
+
+Prueba real pendiente:
+  (testacpscript "HDPE_SEGMENTED_ELBOW")
+Resultado esperado: el mismo codo de B3A (4 gajos, 3 solapes, ~90 grados,
+P1/P2 correctos) pero ahora HUECO en toda la cadena (OD=110/ID=96.8/
+THK=6.6). Los solapes visibles se mantienen aceptables temporalmente
+(no hay corte a inglete todavia -- eso es V0.3.1B3C).
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+Si falla al aplicar subtractFrom() a toda la cadena de 6 piezas, aislar
+probando primero 2 piezas huecas antes de las 6, sin tocar la
+matematica de posiciones ya validada por B3A.

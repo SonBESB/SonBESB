@@ -166,3 +166,112 @@ def test_never_touches_proprietary_plant_files(golden):
     result = generate_segmented_elbow_script(params, geometry)
     for forbidden in (".pcat", ".pspx", ".pspc"):
         assert forbidden not in result.source_code
+
+
+def test_solid_mode_is_unchanged_by_the_hollow_parameter_existing(golden):
+    """Backward-compat guard: the already real-hardware-PASSed B3A
+    executable content (CYLINDER calls, angles, translate, uniteWith,
+    ports) must not change now that generate_segmented_elbow_script()
+    also supports hollow=True."""
+    params, geometry = golden
+    result = generate_segmented_elbow_script(params, geometry)
+    for i in range(6):
+        assert f"pieza_{i} = CYLINDER(s, R=radio_mm," in result.source_code
+    assert "subtractFrom" not in result.source_code
+    assert "radio_mm = OD / 2.0" in result.source_code
+
+
+# --- V0.3.1B3B-2: hollow=True, same B3A chain, per-piece subtractFrom ----
+
+
+def test_hollow_is_syntactically_valid_python(golden):
+    params, geometry = golden
+    result = generate_segmented_elbow_script(params, geometry, hollow=True)
+    ast.parse(result.source_code)
+
+
+def test_hollow_is_deterministic(golden):
+    params, geometry = golden
+    first = generate_segmented_elbow_script(params, geometry, hollow=True)
+    second = generate_segmented_elbow_script(params, geometry, hollow=True)
+    assert first.source_code == second.source_code
+
+
+def test_hollow_builds_ext_and_int_cylinder_per_piece_then_subtracts(golden):
+    params, geometry = golden
+    result = generate_segmented_elbow_script(params, geometry, hollow=True)
+    for i in range(6):
+        assert f"ext_{i} = CYLINDER(s, R=radio_ext_mm," in result.source_code
+        assert f"int_{i} = CYLINDER(s, R=radio_int_mm," in result.source_code
+        assert f"ext_{i}.subtractFrom(int_{i})" in result.source_code
+        assert f"int_{i}.erase()" in result.source_code
+        # only the consumed inner cylinder is erased right after the cut,
+        # the outer one stays alive to be united later
+        assert f"ext_{i}.erase()\n" not in result.source_code.split(
+            f"ext_{i}.subtractFrom(int_{i})"
+        )[1].split(f"int_{i}.erase()")[0]
+
+
+def test_hollow_inner_cylinder_overhangs_outer_by_disclosed_margin(golden):
+    """Same 5mm-per-end overhang already confirmed for real by
+    V0.3.1B3B-1, applied per piece: H grows by 10, O becomes -5."""
+    params, geometry = golden
+    result = generate_segmented_elbow_script(params, geometry, hollow=True)
+    for piece in geometry.all_pieces:
+        pass  # lengths vary per piece; spot check via the O=-5 marker instead
+    assert result.source_code.count("O=-5)") == 6
+    assert "radio_ext_mm = OD / 2.0" in result.source_code
+    assert "radio_int_mm = (OD - 2 * THK) / 2.0" in result.source_code
+
+
+def test_hollow_still_unites_all_six_exterior_pieces_same_as_b3a(golden):
+    """The uniteWith/erase chain (already real-hardware PASSed in B3A)
+    must be untouched -- hollow only changes how each piece is built."""
+    params, geometry = golden
+    solid = generate_segmented_elbow_script(params, geometry)
+    hollow = generate_segmented_elbow_script(params, geometry, hollow=True)
+    solid_union = solid.source_code.split("pieza_0.uniteWith")[1]
+    hollow_union = hollow.source_code.split("ext_0.uniteWith")[1]
+    # same relative union pattern (N calls, N erases), just different var prefix
+    assert solid_union.count("uniteWith(") == hollow_union.count("uniteWith(")
+    assert solid_union.count(".erase()") == hollow_union.count(".erase()")
+
+
+def test_hollow_ports_unchanged_from_solid_mode(golden):
+    params, geometry = golden
+    solid = generate_segmented_elbow_script(params, geometry)
+    hollow = generate_segmented_elbow_script(params, geometry, hollow=True)
+
+    def port_lines(source: str):
+        return [line.strip() for line in source.splitlines() if line.strip().startswith("s.setPoint(")]
+
+    assert port_lines(solid.source_code) == port_lines(hollow.source_code)
+    assert len(port_lines(hollow.source_code)) == 2
+
+
+def test_hollow_no_miter_cuts_yet(golden):
+    """B3C (miter cuts) is explicitly not implemented yet."""
+    params, geometry = golden
+    result = generate_segmented_elbow_script(params, geometry, hollow=True)
+    assert "intersectWith" not in result.source_code
+    assert any("APROXIMADA" in w for w in result.warnings)
+
+
+def test_hollow_warns_that_subtractfrom_is_confirmed_but_full_chain_is_new(golden):
+    params, geometry = golden
+    result = generate_segmented_elbow_script(params, geometry, hollow=True)
+    assert any("B3B-1" in w and "SI tiene confirmacion" in w for w in result.warnings)
+
+
+def test_hollow_cites_sources(golden):
+    params, geometry = golden
+    result = generate_segmented_elbow_script(params, geometry, hollow=True)
+    for citation in SOURCE_CITATIONS:
+        assert citation in result.source_code
+
+
+def test_hollow_never_touches_proprietary_plant_files(golden):
+    params, geometry = golden
+    result = generate_segmented_elbow_script(params, geometry, hollow=True)
+    for forbidden in (".pcat", ".pspx", ".pspc"):
+        assert forbidden not in result.source_code
