@@ -1,25 +1,22 @@
-"""HDPE_SEGMENTED_ELBOW.py — V0.3.1A: VALIDATION_GEOMETRY_ONLY, NOT the codo DIN 16963.
+"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B1: VALIDATION_GEOMETRY_ONLY, sin puertos todavia.
 
-Fixes the V0.3 scaffold's entry-point bug found on real AutoCAD Plant 3D
-2025 hardware (see plant3d_validation/registration_result.txt):
-PLANTREGISTERCUSTOMSCRIPTS and the PnP3dACPAdapter both loaded without
-error, but (testacpscript "HDPE_SEGMENTED_ELBOW") returned NIL and produced no
-geometry, because the routine was named UNCONFIRMED_PLANT3D_ENTRY_POINT
-instead of HDPE_SEGMENTED_ELBOW. Plant 3D's shape lookup requires the routine
-name to match the script name.
+Etapa siguiente a V0.3.1A (que ya probo CYLINDER(...).rotateY(...) + 2
+puertos via s.setPoint(...)). Esta version quita TODO lo demas para
+aislar una sola pregunta: puede nuestra propia familia
+(HDPE_SEGMENTED_ELBOW, mismo nombre de archivo y de rutina) ejecutarse
+bajo el lookup de componentes/familias de Plant 3D. NO agrega puertos,
+NO usa THK/R/Z/PN/SDR, NO es geometria segmentada, NO toca Catalog
+Builder/Spec Editor/EndType. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion
+V0.3.1, para el plan completo (V0.3.1B1 -> B2 -> B3, sin saltar etapas).
 
-This version's ONLY job is to confirm SCRIPT EXECUTION, GEOMETRY API and
-PORT API on the real install: ONE straight cylinder, two ports. It is
-NOT dimensionally meaningful as a codo yet — see
-docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1, for the real evidence and
-sources behind every call below, and for what V0.3.1B still needs.
+Prueba real siguiente:
+    (testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")
+Resultado esperado: un cilindro OD=110mm x L=150mm.
 """
 
 # ---------------------------------------------------------------------------
-# Metadata: same decorators/imports confirmed for V0.3 (see
-# docs/PLANT3D_CUSTOMSCRIPT.md), plus the additional sources below that
-# corroborate CYLINDER / setPoint / the entry-point-matches-script-name
-# rule / TESTACPSCRIPT behavior used in this V0.3.1A fixture:
+# Metadata (ver docs/PLANT3D_CUSTOMSCRIPT.md para el detalle de cada
+# fuente citada):
 #   - https://blog.autodesk.io/custom-python-scripts-for-autocad-plant-3d-part-2/
 #   - https://blog.autodesk.io/custom-python-scripts-for-autocad-plant-3d-part-3/
 #   - https://static.au-uw2-prd.autodesk.com/PD1746_handout_1746_pd1746_20-_20scripting_20components_20for_20autocad_20plant_203d.pdf
@@ -29,6 +26,9 @@ sources behind every call below, and for what V0.3.1B still needs.
 #   - https://forums.autodesk.com/t5/autocad-plant-3d-forum/testacpscript-unknown-command/td-p/11901666
 #   - https://www.autodesk.com/support/technical/article/caas/tsarticles/ts/6z7yLhwAUHwiyYQaRqYdo.html
 #   - https://forums.autodesk.com/autodesk/attachments/autodesk/autocad-plant-3d-forum-zh-cn/4870/1/v1_PD4214-L_Radhakrishnan_AnnexB_Custom-Script-Handout.pdf
+#   - https://forums.autodesk.com/t5/autocad-plant-3d-forum/plant-3d-python-scripts-help-understanding-ask4dist/td-p/13829280
+#   - https://blog.autodesk.io/custom-python-scripts-for-autocad-plant-3d-part-4/
+#   - https://pdfcoffee.com/custom-python-scripts-for-autocad-plant-3d-part-2-autocad-devblog-pdf-free.html
 # ---------------------------------------------------------------------------
 from aqa.math import *
 from varmain.primitiv import *
@@ -36,44 +36,40 @@ from varmain.custom import *
 
 
 @activate(
-    Group="Fitting",
-    TooltipShort="VALIDATION_GEOMETRY_ONLY (V0.3.1A) - not the codo yet",
-    TooltipLong="V0.3.1A: un solo tramo recto, usado solo para validar SCRIPT/GEOMETRY/PORT API en Plant 3D 2025 real. No representa el codo DIN 16963.",
+    Group="Support",
+    TooltipShort="HDPE Segmented Elbow Validation",
+    TooltipLong="Temporary validation geometry",
     LengthUnit="mm",
-    Ports=2,
+    Ports=1,
 )
 @group("MainDimensions")
-@param(OD=LENGTH, TooltipShort="Diametro exterior", TooltipLong="OD (mm) - Golden Case: 110")
-@param(THK=LENGTH, TooltipShort="Espesor de pared (no usado en V0.3.1A)", TooltipLong="Espesor (mm) - reservado para V0.3.1B")
-@param(R=LENGTH, TooltipShort="Radio de curvatura (no usado en V0.3.1A)", TooltipLong="R (mm) - reservado para V0.3.1B")
-@param(LE=LENGTH, TooltipShort="Longitud del tramo de prueba", TooltipLong="Le (mm) - Golden Case: 150")
-@param(Z=LENGTH, TooltipShort="Distancia vertice-cara (no usado en V0.3.1A)", TooltipLong="Z (mm) - reservado para V0.3.1B")
-def HDPE_SEGMENTED_ELBOW(s, OD=110.0, THK=6.6, R=165.0, LE=150.0, Z=315.0, **kw):
-    """VALIDATION_GEOMETRY_ONLY -- un solo tramo recto (CYLINDER), NO el codo DIN 16963.
+@param(
+    OD=LENGTH,
+    TooltipShort="Outside Diameter",
+    Ask4Dist=True,
+)
+@param(
+    LE=LENGTH,
+    TooltipLong="Validation Length",
+)
+def HDPE_SEGMENTED_ELBOW(
+    s,
+    OD=110.0,
+    LE=150.0,
+    OF=-1,
+    K=1,
+    **kw
+):
+    """VALIDATION_GEOMETRY_ONLY -- sin puertos, sin THK/R/Z, NO el codo DIN 16963.
 
-    THK/R/Z se reciben (mismos nombres/defaults del Golden Case
-    DN110/PN10/90) pero todavia no se usan: esta version solo prueba que
-    CYLINDER(...) + s.setPoint(...) funcionan en un Plant 3D 2025 real.
-    Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+    OF/K se reciben (misma forma que el ejemplo real citado
+    literalmente, ver SOURCE_CITATIONS arriba) pero no se usan todavia.
+    Unico objetivo: confirmar que esta familia ejecuta bajo Plant 3D
+    real antes de reintroducir puertos (V0.3.1B2).
     """
-    # CYLINDER(s, R=, H=, O=).rotateY(90.0): firma corroborada por una
-    # fuente independiente de la que aporto el usuario (KB oficial de
-    # Autodesk + handout Annex B, ver SOURCE_CITATIONS arriba) -- no se
-    # tomo la correccion del usuario solo de confianza, se re-verifico.
-    # "R" es el nombre del parametro real de CYLINDER, no confundir con
-    # el parametro @param(R=...) del codo (radio de curvatura, sin usar
-    # todavia en V0.3.1A): aqui R = OD / 2.0 (radio del tubo).
-    tramo = CYLINDER(
+    CYLINDER(
         s,
         R=OD / 2.0,
         H=LE,
         O=0.0,
-    ).rotateY(90.0)
-
-    # Puertos: forma de llamada (posicion, direccion, 0.0) confirmada por
-    # el ejemplo real citado literalmente (TESTSCRIPT2) -- ver
-    # SOURCE_CITATIONS arriba. Se mantienen 3 argumentos en ambas
-    # llamadas (la correccion propuesta traia solo 2 en la primera; sin
-    # evidencia de esa variante, se preservo la forma ya confirmada).
-    s.setPoint((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), 0.0)
-    s.setPoint((LE, 0.0, 0.0), (1.0, 0.0, 0.0), 0.0)
+    ).rotateY(90)

@@ -256,12 +256,53 @@ Generador cubierto por `tests/test_plant3d_validation_script.py`
 (validez `ast.parse()`, determinismo, nombre de entry point, firma de
 `CYLINDER`, patrón de puertos, ausencia de `.pcat`/`.pspx`/`.pspc`).
 
+### V0.3.1B1 — validacion sin puertos (plan por etapas, sin saltar ninguna)
+
+Antes de que V0.3.1A (con la firma corregida de `CYLINDER`) llegara a
+probarse en el entorno real, el usuario definio un plan explicito por
+etapas para separar aun mas las variables en juego:
+
+```text
+V0.3.1B1  -- CYLINDER(...).rotateY(90), Ports=1, SIN s.setPoint(...)
+V0.3.1B2  -- (futura) Ports=2, agrega P1/P2, valida s.setPoint(...)
+V0.3.1B3  -- (futura) geometria real del codo DN110/PN10/90 (4 gajos)
+```
+
+`generate_validation_script_b1()` en
+`plant3d/generators/validation_script_generator.py` produce esta
+version minima: mismo `CYLINDER(s, R=OD/2.0, H=LE, O=0.0).rotateY(90)`
+ya usado en V0.3.1A, pero sin ningun `s.setPoint(...)`, `Ports=1` en vez
+de `2`, `Group="Support"` en vez de `"Fitting"`, y solo `OD`/`LE` como
+parametros con efecto (`OF`/`K` se reciben pero no se usan). Su unico
+proposito es aislar si la familia/nombre propios de este proyecto
+(`HDPE_SEGMENTED_ELBOW` como archivo y como rutina) ejecutan bajo el
+lookup de componentes de Plant 3D, antes de reintroducir puertos.
+
+Dos elementos nuevos de API, verificados de forma independiente por
+WebSearch antes de usarse (no aceptados solo porque el usuario los
+propuso, mismo estandar que el resto de V0.3/V0.3.1):
+
+- `Ask4Dist=True` en un `@param(...=LENGTH, ...)`: confirmado por un
+  hilo dedicado de Autodesk Community ("Plant 3D Python Scripts: Help
+  Understanding Ask4Dist").
+- `def NOMBRE(s, D=80.0, L=150.0, OF=-1, K=1, **kw):`: confirmado por
+  una cita literal con esa forma exacta de firma.
+
+Prueba real siguiente:
+`(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")` — se
+espera un cilindro OD=110mm x L=150mm. Solo si esto produce el objeto
+esperado se avanza a V0.3.1B2 (reintroducir `Ports=2` + `s.setPoint`);
+solo despues de B2 se avanza a V0.3.1B3 (geometria real del codo, 4
+gajos 15°-30°-30°-15°). Sin saltar etapas.
+
+Generador cubierto por las pruebas `test_b1_*` en
+`tests/test_plant3d_validation_script.py`.
+
 ### Siguiente paso
 
-Probar V0.3.1A en el mismo entorno (Plant 3D 2025) y registrar el
+Probar V0.3.1B1 en el mismo entorno (Plant 3D 2025) y registrar el
 resultado real en una nueva entrada de
-`plant3d_validation/registration_result.txt`. Solo si
-`(testacpscript "HDPE_SEGMENTED_ELBOW")` produce un objeto visible se
-avanza a V0.3.1B (geometría real del codo DN110/PN10/90°, con los cuatro
-gajos 15°-30°-30°-15° y el mapeo P1/P2 real vía
-`plant3d/generators/port_mapping.py`).
+`plant3d_validation/registration_result.txt`. La version con puertos de
+V0.3.1A (`generate_validation_script()`, aun no probada en real) queda
+disponible en el generador para retomarse mas adelante si hiciera falta
+un punto de comparacion.

@@ -106,3 +106,39 @@ cerrar y reabrir Plant 3D, (arxload "PnP3dACPAdapter"),
 (testacpscript "HDPE_SEGMENTED_ELBOW"), y registrar el resultado real
 (objeto visible o no) en una nueva entrada fechada a continuacion de
 esta.
+
+===================================================================
+Actualizacion V0.3.1B1 (aun sin probar en real) -- 2026-08-24
+===================================================================
+
+Antes de que la version con puertos de V0.3.1A (CYLINDER + 2 puertos
+via s.setPoint) llegara a probarse en real, el usuario definio un plan
+por etapas mas granular para aislar variables:
+
+  V0.3.1B1 -- CYLINDER(...).rotateY(90), Ports=1, SIN s.setPoint(...)
+  V0.3.1B2 -- (futura) Ports=2, agrega P1/P2, valida s.setPoint(...)
+  V0.3.1B3 -- (futura) geometria real del codo DN110/PN10/90 (4 gajos)
+
+HDPE_SEGMENTED_ELBOW.py se regenero como V0.3.1B1
+(generate_validation_script_b1() en
+plant3d/generators/validation_script_generator.py): mismo
+CYLINDER(s, R=OD/2.0, H=LE, O=0.0).rotateY(90) ya usado en V0.3.1A,
+pero sin ningun s.setPoint(...), Ports=1 en vez de 2,
+Group="Support" en vez de "Fitting". Dos elementos nuevos
+(Ask4Dist=True y la firma def NOMBRE(s, D=, L=, OF=-1, K=1, **kw))
+se verificaron de forma independiente via WebSearch antes de usarse.
+
+Prueba real pendiente:
+  (testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150")
+Resultado esperado: un cilindro OD=110mm x L=150mm.
+
+Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
+mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+Siguiente paso: reemplazar el .py en CustomScripts,
+PLANTREGISTERCUSTOMSCRIPTS, cerrar y reabrir Plant 3D,
+(arxload "PnP3dACPAdapter"),
+(testacpscript "HDPE_SEGMENTED_ELBOW" "OD" "110" "LE" "150"), y
+registrar el resultado real (objeto visible o no) en una nueva entrada
+fechada a continuacion de esta. Si el cilindro aparece, avanzar a
+V0.3.1B2 (no antes).

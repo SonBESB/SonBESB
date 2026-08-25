@@ -14,6 +14,7 @@ from plant3d.generators.validation_script_generator import (
     DEFAULT_SCRIPT_NAME,
     SOURCE_CITATIONS,
     generate_validation_script,
+    generate_validation_script_b1,
 )
 
 
@@ -101,5 +102,88 @@ def test_validation_script_cites_sources():
 
 def test_validation_script_never_touches_proprietary_plant_files():
     result = generate_validation_script()
+    for forbidden in (".pcat", ".pspx", ".pspc"):
+        assert forbidden not in result.source_code
+
+
+# --- V0.3.1B1: bare-minimum validation, no ports yet ----------------------
+
+
+def test_b1_is_syntactically_valid_python():
+    result = generate_validation_script_b1()
+    ast.parse(result.source_code)
+
+
+def test_b1_is_deterministic():
+    first = generate_validation_script_b1()
+    second = generate_validation_script_b1()
+    assert first.source_code == second.source_code
+
+
+def test_b1_entry_point_matches_script_name():
+    result = generate_validation_script_b1()
+    assert result.script_name == DEFAULT_SCRIPT_NAME
+    assert f"def {DEFAULT_SCRIPT_NAME}(" in result.source_code
+    assert "UNCONFIRMED_PLANT3D_ENTRY_POINT" not in result.source_code
+
+
+def test_b1_uses_the_confirmed_signature_and_cylinder_call():
+    """def NAME(s, OD=110.0, LE=150.0, OF=-1, K=1, **kw) + CYLINDER(s,
+    R=OD/2.0, H=LE, O=0.0).rotateY(90) — both independently confirmed
+    via WebSearch (TESTSCRIPT signature quote, Ask4Dist Community
+    thread), not just accepted from the user's proposal."""
+    result = generate_validation_script_b1()
+    assert "OD=110.0,\n    LE=150.0,\n    OF=-1,\n    K=1,\n    **kw" in result.source_code
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "R=OD / 2.0" in body
+    assert "H=LE" in body
+    assert "O=0.0" in body
+    assert ".rotateY(90)" in body
+
+
+def test_b1_has_no_ports_at_all():
+    """B1's whole purpose is to isolate script/family execution before
+    re-adding ports in B2 — the function body must not call setPoint,
+    and metadata must declare Ports=1, not 2. (The narrative header
+    legitimately mentions "s.setPoint(...)" in prose, describing what
+    V0.3.1A already did and what B1 deliberately omits.)"""
+    result = generate_validation_script_b1()
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "setPoint" not in body
+    assert "Ports=1" in result.source_code
+    assert "Ports=2" not in result.source_code
+
+
+def test_b1_does_not_declare_thk_r_z_or_pn_sdr():
+    result = generate_validation_script_b1()
+    assert "@param(THK" not in result.source_code
+    assert "@param(R" not in result.source_code
+    assert "@param(Z" not in result.source_code
+    assert "@param(PN" not in result.source_code
+    assert "@param(SDR" not in result.source_code
+    body = result.source_code.split(f"def {DEFAULT_SCRIPT_NAME}(")[1]
+    assert "PN" not in body
+    assert "SDR" not in body
+
+
+def test_b1_uses_ask4dist_on_od():
+    result = generate_validation_script_b1()
+    assert "Ask4Dist=True" in result.source_code
+
+
+def test_b1_is_clearly_marked_not_the_real_elbow():
+    result = generate_validation_script_b1()
+    assert "VALIDATION_GEOMETRY_ONLY" in result.source_code
+    assert "DIN 16963" in result.source_code
+
+
+def test_b1_cites_sources_including_ask4dist_and_testscript_signature():
+    result = generate_validation_script_b1()
+    for citation in SOURCE_CITATIONS:
+        assert citation in result.source_code
+
+
+def test_b1_never_touches_proprietary_plant_files():
+    result = generate_validation_script_b1()
     for forbidden in (".pcat", ".pspx", ".pspc"):
         assert forbidden not in result.source_code
