@@ -1,4 +1,4 @@
-"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R3A: SINGLE SIDE CUT, solo Gajo A + un cutter.
+"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R3A-inverted: SINGLE SIDE CUT, solo Gajo A + un cutter.
 
 V0.3.1B3C-1R2 (visual debug) se probo real: GAJO_A, GAJO_B, CUTTER_A y
 CUTTER_B se vieron simultaneamente en semiespacios opuestos, orientacion
@@ -15,8 +15,8 @@ respecto de R1/R2. Lo unico nuevo: el signo de semiespacio para el
 cutter de Gajo A se eligio automaticamente a partir de
 side_a = dot(midpoint_gajo_a - joint_point, plane_normal) = -41.25
 (negativo) -- el cutter debe ocupar el
-semiespacio CONTRARIO al cuerpo del gajo, sign=+1.0.
-
+semiespacio CONTRARIO al cuerpo del gajo, sign=-1.0.
+Variante INVERTIDA: usa el signo contrario al calculo automatico (pedida solo si la variante base hizo desaparecer Gajo A).
 
 No se modifico core/geometry/segmented_elbow.py, joint_point ni
 plane_normal. No se avanza a Gajo B ni a B3C-2.
@@ -60,7 +60,7 @@ from varmain.custom import *
 @activate(
     Group="Fitting",
     TooltipShort="Single side cut (Gajo A) - fixture minimo de diagnostico",
-    TooltipLong="V0.3.1B3C-1R3A: solo Gajo A hueco + un cutter BOX, un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
+    TooltipLong="V0.3.1B3C-1R3A-inverted: solo Gajo A hueco + un cutter BOX, un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
     LengthUnit="mm",
     Ports=1,
 )
@@ -88,8 +88,8 @@ def HDPE_SEGMENTED_ELBOW(s, OD=110, THK=6.6, R=165, LE=150, Z=315, OF=-1, K=1, *
     int_a.erase()
 
     # Un solo cutter -- mismo joint_point/plane_normal/rotateY(45) que R1/R2,
-    # semiespacio elegido automaticamente (side_a=-41.25, sign=+1.0).
-    cutter_a = BOX(s, L=2000, W=2000, H=500).rotateY(45).translate((128.449, 0, 225.104))
+    # semiespacio elegido automaticamente (side_a=-41.25, sign=-1.0).
+    cutter_a = BOX(s, L=2000, W=2000, H=500).rotateY(45).translate((-225.104, 0, -128.449))
     ext_a.subtractFrom(cutter_a)
     cutter_a.erase()
 

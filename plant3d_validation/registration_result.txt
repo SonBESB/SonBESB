@@ -768,3 +768,53 @@ plane_normal. No se avanza a Gajo B ni a B3C-2.
 
 Este script AUN NO fue probado en Plant 3D 2025 real. Estado global se
 mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+===================================================================
+RESULTADO REAL V0.3.1B3C-1R3A -- FAIL -- 2026-08-25
+===================================================================
+
+Probado en AutoCAD Plant 3D 2025 real: (testacpscript "HDPE_SEGMENTED_ELBOW")
+ejecuto correctamente y devolvio <Entity name: ...>, pero despues de
+ZOOM E no existe geometria visible.
+
+  B3C-1R3A_SCRIPT_EXECUTION    = PASS
+  B3C-1R3A_BOOLEAN_EXECUTION   = PASS
+  GAJO_A_SURVIVES_CUT          = FAIL
+  CORRECT_HALFSPACE_REMOVED    = FAIL
+
+Confirma el escenario previsto por el generador: el semiespacio elegido
+automaticamente (sign=+1.0, lado opuesto al cuerpo segun side_a=-41.25)
+es el que Plant 3D realmente elimina al ejecutar subtractFrom() sobre
+el cuerpo principal de Gajo A, no el excedente -- la interpretacion del
+semiespacio estaba invertida respecto del comportamiento real del BOX.
+
+No se modifico joint_point, plane_normal, geometria del gajo,
+core/geometry/segmented_elbow.py, dimensiones del cutter ni angulo del
+plano. Unico cambio para la siguiente prueba: usar
+generate_single_side_cut_script(..., invert_cutter=True) (ya
+implementado y probado con ast.parse/determinismo desde el commit
+anterior) -- cutter_a con sign=-1.0 en vez de +1.0, sin tocar ningun
+otro numero.
+
+===================================================================
+Actualizacion V0.3.1B3C-1R3A-INVERTED (aun sin probar en real) -- 2026-08-25
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero con
+generate_single_side_cut_script(params, geometry, invert_cutter=True):
+mismo fixture minimo (solo Gajo A hueco + un cutter BOX + un
+subtractFrom(), sin Gajo B, sin uniteWith, sin calibration box,
+Ports=1), cambiando UNICAMENTE el signo de semiespacio del cutter
+(sign=-1.0 en vez de +1.0 -- centro del cutter = joint_point -
+(H/2)*plane_normal). joint_point, plane_normal, rotateY(45) y las
+dimensiones del cutter no cambiaron.
+
+Prueba real pendiente: (testacpscript "HDPE_SEGMENTED_ELBOW"). Esperado:
+Gajo A sobrevive y termina en una cara inclinada correspondiente al
+plano de junta (GAJO_A_SURVIVES_CUT=PASS, CUT FACE appears/passes
+joint, CORRECT_HALFSPACE_REMOVED=PASS). Si esta variante tambien falla,
+no se debe adivinar una tercera vez -- reportar el resultado real y
+esperar instruccion.
+
+No se avanza a Gajo B ni a B3C-2 hasta que Gajo A sobreviva el corte en
+real. Estado global se mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
