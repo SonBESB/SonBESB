@@ -865,3 +865,47 @@ evidencia nueva.
 No se modifico core/geometry/segmented_elbow.py, joint_point ni
 plane_normal. No se avanza a Gajo B ni a B3C-2. Estado global se
 mantiene: PLANT3D_VALIDATION_IN_PROGRESS. NO PLANT3D_VALIDATED.
+
+===================================================================
+RESULTADO REAL V0.3.1B3C-1R4 -- PASS -- 2026-08-25
+===================================================================
+
+Probado en AutoCAD Plant 3D 2025 real (2D Wireframe + Conceptual):
+
+  GAJO_A_SURVIVES_CUT       = PASS
+  HOLLOW_GEOMETRY_RETAINED  = PASS
+  INCLINED_CUT_FACE         = PASS
+  BOX_AXIS_MAPPING          = PASS
+  CORRECT_HALFSPACE_REMOVED = PASS
+
+BOX(s, H=2000.0, L=2000.0, W=500.0) -- mapeo H->X, L->Y, W->Z -- queda
+VALIDADO en hardware real. No modificar este mapeo ni la matematica del
+plano en rondas futuras salvo evidencia real nueva que lo contradiga.
+
+===================================================================
+Actualizacion V0.3.1B3C-1R4B -- GAJO B (aun sin probar en real) -- 2026-08-25
+===================================================================
+
+HDPE_SEGMENTED_ELBOW.py se regenero con
+generate_axis_corrected_side_cut_script_gajo_b() en
+plant3d/generators/miter_joint_script_generator.py: misma logica
+validada de R4 (mismo mapeo BOX H=X/L=Y/W=Z, mismo rotateY(45),
+joint_point y plane_normal sin cambios), aplicada a Gajo B en vez de
+Gajo A. Fixture minimo: solo Gajo B hueco + un cutter + un
+subtractFrom. Sin Gajo A, sin uniteWith, sin calibration box, Ports=1.
+
+Semiespacio elegido automaticamente (misma logica que R3A/R4, no a
+mano): side_b = dot(midpoint_gajo_b - joint_point, plane_normal) =
+41.25 (positivo) -> cutter con sign=-1.0, que coincide exactamente con
+el cutter_b ya usado en R1/R2 (verificado en los tests).
+
+Prueba real pendiente: (testacpscript "HDPE_SEGMENTED_ELBOW"). Esperado:
+GAJO_B_SURVIVES_CUT=PASS, HOLLOW_GEOMETRY_RETAINED=PASS,
+INCLINED_CUT_FACE=PASS. Si Gajo B pasa, el siguiente paso es unir Gajo A
++ Gajo B con la misma junta (NO GAP, NO OVERLAP, COMMON CUT PLANE,
+CONTINUOUS BORE) para cerrar B3C-1 completo, antes de aplicar la misma
+funcion a las otras dos juntas del codo.
+
+No se modifico core/geometry/segmented_elbow.py, joint_point ni
+plane_normal. Estado global se mantiene: PLANT3D_VALIDATION_IN_PROGRESS.
+NO PLANT3D_VALIDATED.

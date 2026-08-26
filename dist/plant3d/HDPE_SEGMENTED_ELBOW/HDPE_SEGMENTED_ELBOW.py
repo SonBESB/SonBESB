@@ -1,33 +1,29 @@
-"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R4: CORRECT BOX AXIS MAPPING (H=X, L=Y, W=Z).
+"""HDPE_SEGMENTED_ELBOW.py — V0.3.1B3C-1R4B: axis-corrected side cut, solo Gajo B.
 
-V0.3.1B3C-1R3A y R3A-inverted se probaron reales: Gajo A desaparecio
-por completo en AMBOS signos de semiespacio, descartando el signo como
-causa. Releyendo la cita ya presente en SOURCE_CITATIONS
-(BOX(s, H=L, L=paB, W=A) con puertos en (-L/2,0,0)/(L/2,0,0), ambos
-sobre el eje local X, con ese mismo L pasado a H=) se concluye que BOX
-`H` controla el eje local X, no Z como se asumia por analogia con
-CYLINDER (nunca citada para BOX).
+V0.3.1B3C-1R4 se probo real: GAJO_A_SURVIVES_CUT, HOLLOW_GEOMETRY_RETAINED,
+INCLINED_CUT_FACE, BOX_AXIS_MAPPING y CORRECT_HALFSPACE_REMOVED, todos
+PASS, con BOX(s, H=2000, L=2000, W=500). Esta version repite exactamente
+la misma construccion para Gajo B: mismo mapeo H/L/W, mismo rotateY(45),
+joint_point y plane_normal sin cambios.
 
-Esta version cambia UNICAMENTE la asignacion de valores del cutter:
-H=2000, L=2000, W=500 (antes L=2000, W=2000, H=500) -- el valor delgado
-va ahora en W, hipotesis de que W es el eje que rotateY(45) orienta
-hacia plane_normal. joint_point, plane_normal, rotateY(45),
-rotateY(60) de Gajo A y el signo de semiespacio
-(side_a=-41.25, sign=+1.0, igual que R3A base,
-NO invertido) no cambiaron.
+Unico elemento nuevo: el signo de semiespacio para Gajo B se eligio
+automaticamente a partir de
+side_b = dot(midpoint_gajo_b - joint_point, plane_normal) = 41.25
+(positivo) -- el cutter debe ocupar el
+semiespacio CONTRARIO al cuerpo del gajo, sign=-1.0.
 
-Sin Gajo B, sin uniteWith, sin calibration box. No se modifico
+Sin Gajo A, sin uniteWith, sin calibration box. No se modifico
 core/geometry/segmented_elbow.py, joint_point ni plane_normal.
 
 Verificar en Plant 3D:
-  GAJO_A survives?            (deberia sobrevivir, no desaparecer)
-  inclined cut face?          (deberia verse una cara de corte inclinada)
-  cut passes joint point?     (la cara deberia pasar por el punto de union)
+  GAJO_B_SURVIVES_CUT
+  HOLLOW_GEOMETRY_RETAINED
+  INCLINED_CUT_FACE
 
 Golden Case: DN110 PN10 90 grados
   OD=110 THK=6.6 R=165
   LE=150 Z=315
-  Pieza probada aqui: Gajo 2 (30 deg), sin Gajo 3.
+  Pieza probada aqui: Gajo 3 (30 deg), sin Gajo 2.
 """
 
 # ---------------------------------------------------------------------------
@@ -56,8 +52,8 @@ from varmain.custom import *
 
 @activate(
     Group="Fitting",
-    TooltipShort="Axis-corrected side cut (Gajo A) - fixture minimo R4",
-    TooltipLong="V0.3.1B3C-1R4: solo Gajo A hueco + un cutter BOX con mapeo de ejes corregido (H=X, L=Y, W=Z), un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
+    TooltipShort="Axis-corrected side cut (Gajo B) - fixture minimo R4B",
+    TooltipLong="V0.3.1B3C-1R4B: solo Gajo B hueco + un cutter BOX con mapeo de ejes validado (H=X, L=Y, W=Z), un solo subtractFrom. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.",
     LengthUnit="mm",
     Ports=1,
 )
@@ -68,26 +64,26 @@ from varmain.custom import *
 @param(LE=LENGTH, TooltipShort="Longitud tangente (no usada en este fixture)", TooltipLong="Le (mm) - Golden Case: 150. Este fixture no incluye los tramos Le.")
 @param(Z=LENGTH, TooltipShort="Distancia vertice-cara (posiciones ya horneadas)", TooltipLong="Z (mm) - Golden Case: 315.")
 def HDPE_SEGMENTED_ELBOW(s, OD=110, THK=6.6, R=165, LE=150, Z=315, OF=-1, K=1, **kw):
-    """AXIS_CORRECTED_SIDE_CUT -- solo Gajo A hueco + un cutter BOX (H=X, L=Y, W=Z), un solo subtractFrom.
+    """AXIS_CORRECTED_SIDE_CUT_GAJO_B -- solo Gajo B hueco + un cutter BOX (H=X, L=Y, W=Z), un solo subtractFrom.
 
-    NO representa el codo completo ni siquiera una junta a inglete
-    completa -- es el fixture minimo para verificar el mapeo de ejes
-    H/L/W de BOX. Ver docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
+    NO representa el codo completo ni la junta a inglete completa --
+    es el mismo fixture minimo de R4, aplicado a Gajo B. Ver
+    docs/PLANT3D_CUSTOMSCRIPT.md, seccion V0.3.1.
     """
     radio_ext_mm = OD / 2.0
     radio_int_mm = (OD - 2 * THK) / 2.0
 
-    # Gajo A (hueco) -- taladro interior ya confirmado en real por B3B-1.
-    ext_a = CYLINDER(s, R=radio_ext_mm, H=85.4103, O=0.0).rotateY(60).translate((-122.295, 0, 5.62224))
-    int_a = CYLINDER(s, R=radio_int_mm, H=95.4103, O=-5).rotateY(60).translate((-122.295, 0, 5.62224))
-    ext_a.subtractFrom(int_a)
-    int_a.erase()
+    # Gajo B (hueco) -- taladro interior ya confirmado en real por B3B-1.
+    ext_b = CYLINDER(s, R=radio_ext_mm, H=85.4103, O=0.0).rotateY(30).translate((-48.3274, 0, 48.3274))
+    int_b = CYLINDER(s, R=radio_int_mm, H=95.4103, O=-5).rotateY(30).translate((-48.3274, 0, 48.3274))
+    ext_b.subtractFrom(int_b)
+    int_b.erase()
 
-    # Un solo cutter -- mismo joint_point/plane_normal/rotateY(45) que R1-R3A,
-    # mismo signo de semiespacio (side_a=-41.25, sign=+1.0, no invertido).
-    # CORREGIDO en R4: el valor delgado (500mm) va en W, no en H (ver docstring del modulo).
-    cutter_a = BOX(s, H=2000, L=2000, W=500).rotateY(45).translate((128.449, 0, 225.104))
-    ext_a.subtractFrom(cutter_a)
-    cutter_a.erase()
+    # Un solo cutter -- mapeo H/L/W confirmado en real por R4, mismo
+    # rotateY(45) que R1-R4, signo de semiespacio elegido automaticamente
+    # (side_b=41.25, sign=-1.0).
+    cutter_b = BOX(s, H=2000, L=2000, W=500).rotateY(45).translate((-225.104, 0, -128.449))
+    ext_b.subtractFrom(cutter_b)
+    cutter_b.erase()
 
-    s.setPoint((-122.295, 0, 5.62224), (-0.866025, -0, -0.5), 0.0)
+    s.setPoint((-5.62224, 0, 122.295), (0.5, 0, 0.866025), 0.0)

@@ -17,6 +17,7 @@ from data.repository import ElbowRepository
 from plant3d.generators.miter_joint_script_generator import (
     SOURCE_CITATIONS,
     generate_axis_corrected_side_cut_script,
+    generate_axis_corrected_side_cut_script_gajo_b,
     generate_debug_cutters_script,
     generate_single_miter_joint_script,
     generate_single_side_cut_script,
@@ -584,5 +585,83 @@ def test_axis_corrected_cites_sources(golden):
 def test_axis_corrected_never_touches_proprietary_plant_files(golden):
     params, geometry = golden
     result = generate_axis_corrected_side_cut_script(params, geometry)
+    for forbidden in (".pcat", ".pspx", ".pspc"):
+        assert forbidden not in result.source_code
+
+
+# --- V0.3.1B3C-1R4B: same validated logic as R4, applied to Gajo B -------
+
+
+def test_gajo_b_script_is_syntactically_valid_and_deterministic(golden):
+    params, geometry = golden
+    first = generate_axis_corrected_side_cut_script_gajo_b(params, geometry)
+    second = generate_axis_corrected_side_cut_script_gajo_b(params, geometry)
+    ast.parse(first.source_code)
+    assert first.source_code == second.source_code
+
+
+def test_gajo_b_uses_the_r4_validated_box_axis_mapping(golden):
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script_gajo_b(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert "cutter_b = BOX(s, H=2000, L=2000, W=500)" in body
+    assert ".rotateY(45)" in body
+
+
+def test_gajo_b_cutter_matches_r1_r2_cutter_b_position(golden):
+    """The automatically-selected half-space for Gajo B matches R1/R2's
+    original cutter_b exactly (side_b is positive -> sign=-1.0)."""
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script_gajo_b(params, geometry)
+    real_r1 = generate_single_miter_joint_script(params, geometry)
+
+    def translate_arg(source: str, var: str):
+        line = next(l for l in source.splitlines() if f"{var} = BOX(" in l)
+        return line.split(".translate(")[1]
+
+    assert translate_arg(result.source_code, "cutter_b") == translate_arg(real_r1.source_code, "cutter_b")
+
+
+def test_gajo_b_builds_only_gajo_b_hollow_no_gajo_a(golden):
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script_gajo_b(params, geometry)
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+    assert "ext_b = CYLINDER(s, R=radio_ext_mm," in body
+    assert "int_b = CYLINDER(s, R=radio_int_mm," in body
+    assert "ext_b.subtractFrom(int_b)" in body
+    assert "int_b.erase()" in body
+    assert "ext_a" not in body
+    assert "cutter_a" not in body
+    assert "uniteWith" not in body
+    assert "CALIBRATION_BOX_TEMPORARY" not in result.source_code
+    assert body.count("CYLINDER(") == 2
+    assert body.count("BOX(") == 1
+
+
+def test_gajo_b_ports_is_one_with_a_single_setpoint_at_the_free_end(golden):
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script_gajo_b(params, geometry)
+    gajo_b = geometry.all_pieces[3]
+    body = result.source_code.split("def HDPE_SEGMENTED_ELBOW(")[1]
+
+    def fmt(v):
+        return "(" + ", ".join(f"{round(c, 6):.6g}" for c in v) + ")"
+
+    p2_pos = fmt((gajo_b.axis_end[0], gajo_b.axis_end[2], gajo_b.axis_end[1]))
+    assert "Ports=1," in result.source_code
+    assert body.count("s.setPoint(") == 1
+    assert f"s.setPoint({p2_pos}," in body
+
+
+def test_gajo_b_cites_sources(golden):
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script_gajo_b(params, geometry)
+    for citation in SOURCE_CITATIONS:
+        assert citation in result.source_code
+
+
+def test_gajo_b_never_touches_proprietary_plant_files(golden):
+    params, geometry = golden
+    result = generate_axis_corrected_side_cut_script_gajo_b(params, geometry)
     for forbidden in (".pcat", ".pspx", ".pspc"):
         assert forbidden not in result.source_code
