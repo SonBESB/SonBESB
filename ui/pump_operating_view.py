@@ -20,6 +20,8 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
+import json
+
 from core.hydraulics.affinity import PumpCurve, PumpCurvePoint, scale_by_affinity, twin_parallel, twin_series
 from core.hydraulics.curve_fit import fit_polynomial
 from core.hydraulics.fluids import FluidProperties, TemperatureOutOfRangeError, custom_fluid, water_properties
@@ -27,7 +29,10 @@ from core.hydraulics.minor_losses import FITTING_K_DISCREPANCIES, FITTING_K_TABL
 from core.hydraulics.npsh import DEFAULT_NPSH_SAFETY_MARGIN_M, check_npsh, npsh_available
 from core.hydraulics.operating_point import solve_operating_point
 from core.hydraulics.power import compute_power
+from core.hydraulics.pressure_rating import PN_BAR_TABLE, build_shutoff_pressure_profile
+from core.hydraulics.surge import PIPE_ELASTIC_MODULUS_PA, WATER_BULK_MODULUS_PA, compute_surge
 from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system
+from core.hydraulics.velocity_check import DEFAULT_MAX_VELOCITY_M_S, DEFAULT_MIN_VELOCITY_M_S, check_velocity
 
 _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadratica (grado 2)": 2, "Cubica (grado 3)": 3}
 
@@ -48,7 +53,7 @@ def render_pump_operating_point_tab() -> None:
     )
 
     fluid = _render_fluid_section("pump")
-    segments = _render_segments_section("pump")
+    segments, pn_labels = _render_segments_section("pump")
     static_head_m = st.number_input(
         "Altura estatica del sistema (delta de cota, deposito destino - origen) [m]",
         value=18.5, step=0.1, key="pump_static_head",
@@ -98,6 +103,7 @@ def render_pump_operating_point_tab() -> None:
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=[q * 1000 for q in system_q], y=system_h, name="Sistema", line=dict(color="orange", width=3)))
 
+    nominal_shutoff_head_m = None
     for scenario in scenarios:
         curve = _apply_scenario(base_curve, scenario)
         curve_q = [p.flow_m3_s for p in curve.points]
@@ -110,6 +116,15 @@ def render_pump_operating_point_tab() -> None:
 
         def pump_head_fn(q: float, _fit=fit) -> float:
             return _fit.evaluate(q)
+
+        if scenario["label"] == "Nominal":
+            nominal_shutoff_head_m = fit.evaluate(0.0)
+            if min(curve_q) > 0:
+                st.caption(
+                    f"⚠ La curva de bomba no incluye Q=0: el shutoff head usado para el "
+                    f"chequeo de presion ({nominal_shutoff_head_m:.2f} m) es una EXTRAPOLACION "
+                    "del ajuste, no un dato medido."
+                )
 
         q_bound = max(curve_q) * 1.2
         op = solve_operating_point(pump_head_fn, system_head_fn, q_min=0.0, q_max=q_bound)
@@ -159,15 +174,22 @@ def render_pump_operating_point_tab() -> None:
     nominal = next((r for r in results if r["Escenario"] == "Nominal" and r["Q (L/s)"] is not None), None)
 
     st.subheader("Detalle por tramo (en el punto de operacion nominal)")
+    col_vmin, col_vmax = st.columns(2)
+    v_min = col_vmin.number_input("Velocidad minima recomendada (m/s) — guia, no norma", min_value=0.0, value=DEFAULT_MIN_VELOCITY_M_S, key="pump_vmin")
+    v_max = col_vmax.number_input("Velocidad maxima recomendada (m/s) — guia, no norma", min_value=0.1, value=DEFAULT_MAX_VELOCITY_M_S, key="pump_vmax")
+
+    velocity_checks = []
     if nominal:
         q_op = nominal["Q (L/s)"] / 1000.0
         detail = evaluate_system(segments, q_op, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
         rows = []
         for seg, ev in zip(segments, detail.segment_evaluations):
+            vcheck = check_velocity(ev.label, ev.velocity_m_s, v_min, v_max)
+            velocity_checks.append(vcheck)
             rows.append(
                 {
                     "Tramo": ev.label, "L (m)": seg.length_m, "DI (mm)": seg.inside_diameter_mm,
-                    "v (m/s)": round(ev.velocity_m_s, 3), "Re": f"{ev.reynolds:.3e}",
+                    "v (m/s)": round(ev.velocity_m_s, 3), "v OK?": vcheck.status, "Re": f"{ev.reynolds:.3e}",
                     "Regimen": ev.regime.value, "f": round(ev.friction_factor, 4),
                     "hf (m)": round(ev.friction_head_loss_m, 3), "hs (m)": round(ev.minor_head_loss_m, 3),
                     "Convergio": ev.friction_converged,
@@ -177,13 +199,22 @@ def render_pump_operating_point_tab() -> None:
         for ev in detail.segment_evaluations:
             if not ev.friction_converged or ev.regime.value == "transicional":
                 st.warning(f"{ev.label}: {ev.friction_note}")
+        for vcheck in velocity_checks:
+            if vcheck.status == "BAJA":
+                st.warning(f"{vcheck.label}: v={vcheck.velocity_m_s:.3f} m/s por debajo de {vcheck.min_velocity_m_s:g} m/s — riesgo de sedimentacion/deposito.")
+            elif vcheck.status == "ALTA":
+                st.warning(f"{vcheck.label}: v={vcheck.velocity_m_s:.3f} m/s por encima de {vcheck.max_velocity_m_s:g} m/s — riesgo de erosion/golpe de ariete mas severo.")
     else:
         st.info("Sin punto de operacion nominal (ver estado en la tabla de resultados) — no se muestra detalle por tramo.")
 
+    pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, static_head_m)
     npsh_result = _render_npsh_section("pump", fluid, nominal)
+    surge_result = _render_surge_section("pump", segments, fluid, nominal)
 
     st.subheader("Resumen ejecutivo")
-    st.markdown(_build_executive_summary(nominal, results, npsh_result, segments))
+    st.markdown(_build_executive_summary(nominal, results, npsh_result, segments, velocity_checks, pressure_checks, surge_result))
+
+    _render_export_section("pump", fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result)
 
 
 def _render_fluid_section(key_prefix: str) -> FluidProperties:
@@ -208,7 +239,7 @@ def _render_fluid_section(key_prefix: str) -> FluidProperties:
     return fluid
 
 
-def _render_segments_section(key_prefix: str) -> list[PipeSegment]:
+def _render_segments_section(key_prefix: str, show_pressure_class: bool = True) -> tuple[list[PipeSegment], list[str]]:
     st.markdown("**Linea de impulsion — tramos en serie**")
     st.caption(
         "Cualquier numero de tramos (el motor de calculo no tiene limite; los diametros "
@@ -217,6 +248,7 @@ def _render_segments_section(key_prefix: str) -> list[PipeSegment]:
     )
     n_segments = st.number_input("Numero de tramos", min_value=1, max_value=12, value=1, step=1, key=f"{key_prefix}_n_segments")
     segments = []
+    pn_labels = []
     total_length = 0.0
     for i in range(int(n_segments)):
         with st.expander(f"Tramo {i + 1}", expanded=(i == 0)):
@@ -224,6 +256,12 @@ def _render_segments_section(key_prefix: str) -> list[PipeSegment]:
             length = col1.number_input("Longitud (m)", min_value=0.1, value=1250.0 if i == 0 else 100.0, key=f"{key_prefix}_len_{i}")
             di = col2.number_input("Diametro interior (mm)", min_value=1.0, value=250.0, key=f"{key_prefix}_di_{i}")
             roughness = col3.number_input("Rugosidad absoluta (mm)", min_value=0.0, value=0.007, format="%.4f", key=f"{key_prefix}_rough_{i}")
+            if show_pressure_class:
+                pn_label = st.selectbox(
+                    "Clase de presion (PN) — referencia nominal a 20 C para agua, sin derateo por temperatura",
+                    list(PN_BAR_TABLE.keys()), index=1, key=f"{key_prefix}_pn_{i}",
+                )
+                pn_labels.append(pn_label)
             fitting_names = st.multiselect("Accesorios en este tramo", list(FITTING_K_TABLE.keys()), key=f"{key_prefix}_fit_names_{i}")
             fitting_counts = {}
             for name in fitting_names:
@@ -234,7 +272,7 @@ def _render_segments_section(key_prefix: str) -> list[PipeSegment]:
             total_length += length
     if n_segments > 1:
         st.caption(f"Longitud total: {total_length:.2f} m")
-    return segments
+    return segments, pn_labels
 
 
 def _render_pump_curve_section(key_prefix: str):
@@ -311,7 +349,7 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
             "Altura de succion (m) — positivo = succion en elevacion, negativo = succion inundada",
             value=3.0, key=f"{key_prefix}_npsh_suction_head",
         )
-        suction_segment = _render_segments_section(f"{key_prefix}_npsh_suction")[0] if st.checkbox(
+        suction_segment = _render_segments_section(f"{key_prefix}_npsh_suction", show_pressure_class=False)[0][0] if st.checkbox(
             "Definir tramo de succion (para friccion)", key=f"{key_prefix}_npsh_suction_seg_toggle"
         ) else None
 
@@ -339,7 +377,134 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
         return check
 
 
-def _build_executive_summary(nominal, results, npsh_result, segments) -> str:
+def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_head_m, fluid, static_head_m):
+    st.subheader("Presion de diseno vs clase PN (condicion de caudal cero / shutoff)")
+    st.caption(
+        "Ausente en PiezoCalc (su columna 'Presion' queda como 'no evaluado'). A caudal "
+        "cero no hay perdida por friccion: toda la carga de la bomba en Q=0 aparece como "
+        "presion estatica en la descarga — es la condicion mas exigente en regimen "
+        "permanente (sin contar golpe de ariete, ver seccion aparte). Perfil de elevacion "
+        "repartido proporcional a la longitud — ver limitacion en "
+        "docs/HYDRAULICS_PUMP_OPERATING_POINT.md."
+    )
+    if shutoff_head_m is None or not pn_labels:
+        st.info("Sin punto de operacion nominal o sin clases PN definidas — no se evalua.")
+        return None
+
+    checks = build_shutoff_pressure_profile(segments, shutoff_head_m, static_head_m, fluid.density_kg_m3, pn_labels)
+    st.dataframe(
+        [
+            {
+                "Tramo": c.label, "Desde (m)": round(c.start_length_m, 1), "Hasta (m)": round(c.end_length_m, 1),
+                "Presion de diseno (bar)": round(c.max_design_pressure_bar, 2), "Clase": c.pn_label,
+                "PN (bar)": c.pn_bar, "Margen (bar)": round(c.margin_bar, 2), "Estado": "PASS" if c.passed else "FAIL",
+            }
+            for c in checks
+        ],
+        use_container_width=True, hide_index=True,
+    )
+    failed = [c for c in checks if not c.passed]
+    if failed:
+        st.error(f"{len(failed)} tramo(s) con presion de diseno por ENCIMA de su clase PN.")
+    else:
+        st.success("Todos los tramos dentro de su clase PN en la condicion de shutoff.")
+    return checks
+
+
+def _render_surge_section(key_prefix, segments, fluid, nominal):
+    with st.expander("Golpe de ariete (transiente) — opcional"):
+        st.caption(
+            "Ausente en PiezoCalc y en la planilla de referencia. Modelo simplificado "
+            "(Joukowsky + aproximacion de cierre lento, celeridad de tuberia de pared "
+            "delgada) — no reemplaza un analisis transiente completo. Formulas y "
+            "limitaciones en docs/HYDRAULICS_PUMP_OPERATING_POINT.md."
+        )
+        enabled = st.checkbox("Calcular sobrepresion por cierre de valvula", key=f"{key_prefix}_surge_enabled")
+        if not enabled:
+            return None
+        if not nominal:
+            st.info("Sin punto de operacion nominal — no se puede estimar la velocidad a cortar.")
+            return None
+
+        segment_labels = [s.label for s in segments]
+        idx = st.selectbox("Tramo a analizar (tipicamente el mas cercano a la valvula/bomba)", range(len(segments)), format_func=lambda i: segment_labels[i], key=f"{key_prefix}_surge_segment")
+        segment = segments[idx]
+
+        col1, col2, col3 = st.columns(3)
+        material = col1.selectbox("Material de la tuberia", list(PIPE_ELASTIC_MODULUS_PA.keys()), key=f"{key_prefix}_surge_material")
+        wall_thickness_mm = col2.number_input("Espesor de pared (mm)", min_value=0.1, value=14.8, key=f"{key_prefix}_surge_wall")
+        closure_time_s = col3.number_input("Tiempo de cierre de la valvula (s)", min_value=0.01, value=2.0, key=f"{key_prefix}_surge_closure")
+
+        q_op = nominal["Q (L/s)"] / 1000.0
+        ev = evaluate_system([segment], q_op, 0.0, fluid.density_kg_m3, fluid.viscosity_pa_s).segment_evaluations[0]
+        v_operating = ev.velocity_m_s
+
+        result = compute_surge(
+            length_m=segment.length_m, delta_velocity_m_s=v_operating, closure_time_s=closure_time_s,
+            fluid_bulk_modulus_pa=WATER_BULK_MODULUS_PA, density_kg_m3=fluid.density_kg_m3,
+            inside_diameter_m=segment.inside_diameter_m, wall_thickness_m=wall_thickness_mm / 1000.0,
+            pipe_elastic_modulus_pa=PIPE_ELASTIC_MODULUS_PA[material], static_head_before_m=nominal["H (m)"],
+        )
+        if material != "HDPE" or fluid.name != "Agua":
+            st.caption(
+                f"⚠ Modulo de compresibilidad del fluido usado: agua ({WATER_BULK_MODULUS_PA:.2e} Pa). "
+                "Si el fluido real no es agua, este valor no aplica."
+            )
+
+        col_a, col_b, col_c = st.columns(3)
+        col_a.metric("Celeridad de onda", f"{result.wave_speed_m_s:.0f} m/s")
+        col_b.metric("Tiempo critico (2L/a)", f"{result.critical_time_s:.2f} s")
+        col_c.metric("Regimen de cierre", result.closure_regime)
+        st.metric("Sobrepresion (golpe de ariete)", f"{result.surge_head_m:.2f} m")
+        st.metric("Presion pico estimada (estatica + golpe)", f"{result.peak_pressure_head_m:.2f} m")
+        st.warning(
+            "Este valor debe sumarse (no reemplazar) al chequeo de presion vs PN de la "
+            "seccion anterior para ese tramo — un cierre rapido puede llevar la presion "
+            "pico muy por encima de la condicion de shutoff en regimen permanente."
+        )
+        return result
+
+
+def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result):
+    st.subheader("Exportar caso (JSON)")
+    case = {
+        "fluido": {
+            "nombre": fluid.name, "densidad_kg_m3": fluid.density_kg_m3, "viscosidad_pa_s": fluid.viscosity_pa_s,
+            "temperatura_c": fluid.temperature_c, "fuente": fluid.source,
+        },
+        "tramos": [
+            {
+                "label": s.label, "longitud_m": s.length_m, "diametro_interior_mm": s.inside_diameter_mm,
+                "rugosidad_mm": s.roughness_mm, "accesorios": s.fitting_counts,
+                "clase_pn": pn_labels[i] if i < len(pn_labels) else None,
+            }
+            for i, s in enumerate(segments)
+        ],
+        "altura_estatica_m": static_head_m,
+        "curva_bomba": {"grado_ajuste": degree, "puntos": [{"Q_L_s": q, "H_m": h, "eta_pct": e} for q, h, e in zip(q_points, h_points, eta_points)]},
+        "resultados_por_escenario": results,
+        "npsh": None if npsh_result is None else {
+            "npsh_disponible_m": npsh_result.npsh_available_m, "npsh_requerido_m": npsh_result.npsh_required_m,
+            "margen_seguridad_m": npsh_result.safety_margin_m, "passed": npsh_result.passed,
+        },
+        "presion_vs_pn": None if pressure_checks is None else [
+            {"tramo": c.label, "presion_diseno_bar": c.max_design_pressure_bar, "clase_pn": c.pn_label, "pn_bar": c.pn_bar, "passed": c.passed}
+            for c in pressure_checks
+        ],
+        "golpe_de_ariete": None if surge_result is None else {
+            "celeridad_m_s": surge_result.wave_speed_m_s, "tiempo_critico_s": surge_result.critical_time_s,
+            "regimen": surge_result.closure_regime, "sobrepresion_m": surge_result.surge_head_m,
+            "presion_pico_m": surge_result.peak_pressure_head_m,
+        },
+        "_aviso": "MODELO DE INGENIERIA generado por core/hydraulics/ (SonBESB) — no reemplaza calculo de proveedor ni norma de diseno del proyecto.",
+    }
+    st.download_button(
+        "Descargar caso (JSON)", data=json.dumps(case, indent=2, ensure_ascii=False),
+        file_name="punto_operacion_bombeo.json", mime="application/json", key=f"{key_prefix}_export",
+    )
+
+
+def _build_executive_summary(nominal, results, npsh_result, segments, velocity_checks=None, pressure_checks=None, surge_result=None) -> str:
     if not nominal:
         return (
             "No se encontro un punto de operacion en equilibrio para el escenario nominal — "
@@ -371,4 +536,33 @@ def _build_executive_summary(nominal, results, npsh_result, segments) -> str:
         )
     else:
         lines.append("- NPSH no evaluado en esta corrida (seccion opcional sin activar).")
+
+    if velocity_checks:
+        bad = [v for v in velocity_checks if v.status != "OK"]
+        if bad:
+            lines.append(
+                f"- **{len(bad)} tramo(s) fuera del rango de velocidad recomendado** "
+                f"({velocity_checks[0].min_velocity_m_s:g}-{velocity_checks[0].max_velocity_m_s:g} m/s, guia no norma): "
+                + ", ".join(f"{v.label} ({v.status}, {v.velocity_m_s:.2f} m/s)" for v in bad) + "."
+            )
+        else:
+            lines.append("- Velocidad dentro del rango recomendado en todos los tramos.")
+
+    if pressure_checks:
+        failed_pn = [c for c in pressure_checks if not c.passed]
+        if failed_pn:
+            lines.append(
+                f"- **{len(failed_pn)} tramo(s) superan su clase PN en condicion de shutoff** "
+                "(caudal cero): " + ", ".join(f"{c.label} ({c.max_design_pressure_bar:.1f} bar > {c.pn_label})" for c in failed_pn) + "."
+            )
+        else:
+            lines.append("- Presion de diseno (shutoff) dentro de la clase PN en todos los tramos.")
+
+    if surge_result is not None:
+        lines.append(
+            f"- Golpe de ariete ({surge_result.closure_regime.lower()}): sobrepresion "
+            f"{surge_result.surge_head_m:.2f} m, presion pico estimada "
+            f"**{surge_result.peak_pressure_head_m:.2f} m** — sumar contra la clase PN, no "
+            "esta incluida en el chequeo de shutoff de arriba."
+        )
     return "\n".join(lines)

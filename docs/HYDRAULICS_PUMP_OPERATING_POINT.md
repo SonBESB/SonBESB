@@ -76,6 +76,45 @@ el catalogo real del accesorio.
 | `affinity.py` | Leyes de afinidad Q∝phi, H∝phi^2, P∝phi^3; eficiencia trasladada por punto (no aplanada); bombas gemelas en paralelo/serie. |
 | `npsh.py` | Presion atmosferica (ISA) y de vapor (Tetens) como columna de fluido, NPSH disponible, chequeo PASS/FAIL con margen de seguridad. |
 | `power.py` | Potencia hidraulica/al eje/electrica con densidad real siempre explicita. |
+| `pressure_rating.py` | Presion de diseno en condicion de shutoff (Q=0, sin friccion) por tramo vs su clase PN, PASS/FAIL. |
+| `velocity_check.py` | Velocidad vs rango recomendado (guia de practica, no norma), PASS/BAJA/ALTA por tramo. |
+| `surge.py` | Golpe de ariete: celeridad de onda (Korteweg), tiempo critico 2L/a, Joukowsky para cierre rapido y aproximacion lineal para cierre lento. |
+
+## Ampliaciones agregadas tras el analisis inicial (segunda ronda)
+
+Tras entregar la primera version, se le pidio a este modulo un analisis
+de que mas se podia agregar "de manera ingenieril". Se identificaron 11
+puntos, priorizados por costo/valor; el usuario eligio 4 para esta
+ronda (los otros quedan en el backlog, ver seccion de limitaciones):
+
+1. **Presion de diseno vs PN en condicion de shutoff** (`pressure_rating.py`)
+   — cierra el hueco de PiezoCalc donde la columna "Presion" decia
+   literalmente "no evaluado". Se evalua a Q=0 (sin friccion, toda la
+   carga de la bomba aparece como presion estatica) por ser la
+   condicion mas exigente en regimen permanente.
+2. **Velocidad min/max** (`velocity_check.py`) — PASS/BAJA/ALTA contra
+   un rango editable (0.6-3.0 m/s por defecto), declarado como guia de
+   practica, no como limite normativo.
+3. **Golpe de ariete** (`surge.py`) — el pendiente mas serio identificado
+   en el analisis: un diseno que pasa el chequeo de presion en regimen
+   permanente puede superar la clase PN varias veces durante un cierre
+   de valvula. Modelo simplificado (celeridad de tuberia de pared
+   delgada + Joukowsky/cierre lento), declarado como tal — no
+   reemplaza un analisis transiente completo (metodo de las
+   caracteristicas).
+4. **Exportar caso a JSON** — mismo patron que `elbow_to_dict` del
+   modulo de codos: inputs + resultados descargables, sin mecanismo de
+   reimportacion (igual que el modulo de codos).
+
+Sobre el fluido: se evaluo agregar reologia no-newtoniana (pulpas/lodos
+mineros, dado el dominio `geo-alba.com`), pero el usuario indico que el
+fluido de trabajo por defecto sigue siendo agua — la seccion de fluido
+personalizado (`custom_fluid`) ya permite ingresar densidad/viscosidad
+manualmente para una estimacion aproximada de una pulpa, pero eso trata
+al fluido como newtoniano equivalente: es una aproximacion de primer
+orden, no un modelo de reologia Bingham/power-law. Si el fluido de
+trabajo real no es agua, ese aviso debe tomarse en serio antes de usar
+los resultados para diseno.
 
 ## Limitaciones conocidas (no resueltas, declaradas)
 
@@ -94,8 +133,24 @@ el catalogo real del accesorio.
   tramos en serie con un solo punto de union) puede no encontrar todas
   las intersecciones. Suficiente para el modelo de tramos en serie que
   implementa `system_curve.py`, no para redes ramificadas.
-- **La UI (`ui/pump_operating_view.py`) soporta hasta 2 tramos en
-  serie**, igual que PiezoCalc — no modela redes con derivaciones.
+- **La UI (`ui/pump_operating_view.py`) soporta N tramos en serie**
+  (sin limite artificial) — pero sigue siendo un modelo de tramos EN
+  SERIE, no modela redes con derivaciones (tees que reparten caudal).
+- **El perfil de elevacion para el chequeo de presion se reparte
+  proporcional a la longitud acumulada**, no a cotas de terreno reales
+  — mismo supuesto que declara PiezoCalc ("perfil ilustrativo").
+- **El golpe de ariete usa un modulo elastico de tuberia generico por
+  material** (no de catalogo especifico del fabricante) y asume el
+  modulo de compresibilidad del agua para el fluido — si el fluido real
+  no es agua, ese valor no aplica y el resultado de sobrepresion queda
+  mal sin que la UI lo bloquee (solo lo advierte).
+- **No implementado (backlog, ver seccion de ampliaciones):** redes
+  ramificadas, diametro economico, reologia no-newtoniana/transporte de
+  solidos, bombas no identicas en paralelo, derateo de presion HDPE por
+  temperatura, fuerzas de empuje en codos bajo presion, catalogo de
+  materiales de fabricante (PEXGOL/HDPE/PVC/acero/hierro fundido) — este
+  ultimo con diseno propuesto pendiente de que el usuario aporte los
+  PDF de catalogo.
 
 ## Validacion cruzada realizada
 
