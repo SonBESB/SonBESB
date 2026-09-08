@@ -1,4 +1,4 @@
-"""Streamlit UI for the Piping Component Generator — HDPE segmented elbow.
+"""Streamlit UI for the BESB Piping — HDPE segmented elbow.
 
 This module only wires widgets to the domain layer
 (components/elbows/hdpe_segmented_elbow.py) and renders the result. It
@@ -56,7 +56,7 @@ from ui.plotly_view3d import build_elbow_figure_3d
 from ui.pump_operating_view import render_pump_operating_point_tab
 from ui.results_view import build_result_rows
 
-st.set_page_config(page_title="Piping Component Generator", layout="wide")
+st.set_page_config(page_title="BESB Piping", layout="wide")
 
 
 @st.cache_resource
@@ -634,7 +634,7 @@ def render_plant3d_section(repository: ElbowRepository) -> None:
 
 
 def main() -> None:
-    st.title("Piping Component Generator — V0.3")
+    st.title("BESB Piping — V0.3")
     st.caption(
         "Codo HDPE segmentado PE100 (DIN 16963), con motor geometrico 3D real "
         "(gajos + planos a inglete). Independiente de AutoCAD Plant 3D."

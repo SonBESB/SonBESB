@@ -1,4 +1,4 @@
-# Piping Component Generator — V0.3
+# BESB Piping — V0.3
 
 Generador de componentes parametricos de piping para preparar, en etapas
 futuras, su exportacion a AutoCAD Plant 3D. Esta aplicacion es
@@ -217,3 +217,7 @@ encabezados esperados) o ajusta el loader si cambia el layout.
   `docs/PLANT3D_CUSTOMSCRIPT.md`).
 - Otros tipos de componente (tees, reductores, flanges, valvulas,
   soportes, bombas).
+
+Catalogo PEXGOL 2023 disponible como borrador en la pestaña de bombeo: 170
+referencias, presion por temperatura para agua y exportacion con procedencia.
+Ver [alcance y discrepancias](docs/PEXGOL_CATALOG.md).

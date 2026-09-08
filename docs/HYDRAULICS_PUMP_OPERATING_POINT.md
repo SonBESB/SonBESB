@@ -162,3 +162,11 @@ H=33.71 m) — la diferencia de ~0.1-0.2% es la esperada entre
 Colebrook-White (aqui) y Swamee-Jain (PiezoCalc), y confirma que la
 implementacion es consistente con la referencia en el rango donde
 ambas correlaciones deberian coincidir.
+
+
+## Catalogo PEXGOL (borrador 2023)
+
+Selector por clase y referencia, presion admisible por temperatura para agua,
+espesor para golpe de ariete y procedencia exportada. Ver
+[PEXGOL_CATALOG.md](PEXGOL_CATALOG.md) para alcance y 26 discrepancias.
+Datos pendientes de revision humana; resultados preliminares.

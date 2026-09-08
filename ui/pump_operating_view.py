@@ -21,6 +21,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import json
+from dataclasses import asdict
+from core.hydraulics.pipe_catalog import CLASSES, load_pexgol_catalog, catalog_provenance, allowed_pressure_bar
 
 from core.hydraulics.affinity import PumpCurve, PumpCurvePoint, scale_by_affinity, twin_parallel, twin_series
 from core.hydraulics.curve_fit import fit_polynomial
@@ -40,7 +42,7 @@ _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadratica (
 def render_pump_operating_point_tab() -> None:
     st.markdown(
         "Calcula el punto de operacion (interseccion curva de bomba / curva de sistema) "
-        "de una linea de impulsion con hasta dos tramos en serie. Motor de calculo propio "
+        "de una linea de impulsion con tramos en serie. Motor de calculo propio "
         "(`core/hydraulics/`) — metodologia y fuentes citadas en "
         "`docs/HYDRAULICS_PUMP_OPERATING_POINT.md`. Todo se recalcula en vivo al cambiar "
         "un input."
@@ -53,7 +55,7 @@ def render_pump_operating_point_tab() -> None:
     )
 
     fluid = _render_fluid_section("pump")
-    segments, pn_labels = _render_segments_section("pump")
+    segments, pn_labels, catalog_rows = _render_segments_section("pump", fluid=fluid)
     static_head_m = st.number_input(
         "Altura estatica del sistema (delta de cota, deposito destino - origen) [m]",
         value=18.5, step=0.1, key="pump_static_head",
@@ -207,14 +209,16 @@ def render_pump_operating_point_tab() -> None:
     else:
         st.info("Sin punto de operacion nominal (ver estado en la tabla de resultados) — no se muestra detalle por tramo.")
 
-    pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, static_head_m)
+    pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, static_head_m, catalog_rows)
     npsh_result = _render_npsh_section("pump", fluid, nominal)
-    surge_result = _render_surge_section("pump", segments, fluid, nominal)
+    surge_result = _render_surge_section("pump", segments, fluid, nominal, catalog_rows)
 
     st.subheader("Resumen ejecutivo")
+    if any(catalog_rows):
+        st.warning("Caso PRELIMINAR: contiene datos PEXGOL DRAFT_UNVERIFIED.")
     st.markdown(_build_executive_summary(nominal, results, npsh_result, segments, velocity_checks, pressure_checks, surge_result))
 
-    _render_export_section("pump", fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result)
+    _render_export_section("pump", fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows)
 
 
 def _render_fluid_section(key_prefix: str) -> FluidProperties:
@@ -239,7 +243,7 @@ def _render_fluid_section(key_prefix: str) -> FluidProperties:
     return fluid
 
 
-def _render_segments_section(key_prefix: str, show_pressure_class: bool = True) -> tuple[list[PipeSegment], list[str]]:
+def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, fluid=None):
     st.markdown("**Linea de impulsion — tramos en serie**")
     st.caption(
         "Cualquier numero de tramos (el motor de calculo no tiene limite; los diametros "
@@ -249,19 +253,53 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True) 
     n_segments = st.number_input("Numero de tramos", min_value=1, max_value=12, value=1, step=1, key=f"{key_prefix}_n_segments")
     segments = []
     pn_labels = []
+    catalog_rows = []
     total_length = 0.0
     for i in range(int(n_segments)):
         with st.expander(f"Tramo {i + 1}", expanded=(i == 0)):
-            col1, col2, col3 = st.columns(3)
-            length = col1.number_input("Longitud (m)", min_value=0.1, value=1250.0 if i == 0 else 100.0, key=f"{key_prefix}_len_{i}")
-            di = col2.number_input("Diametro interior (mm)", min_value=1.0, value=250.0, key=f"{key_prefix}_di_{i}")
-            roughness = col3.number_input("Rugosidad absoluta (mm)", min_value=0.0, value=0.007, format="%.4f", key=f"{key_prefix}_rough_{i}")
+            source = st.selectbox("Origen de dimensiones", ["Manual", "PEXGOL 2023 (borrador)"], key=f"{key_prefix}_source_{i}")
+            row = None
+            length = st.number_input("Longitud (m)", min_value=0.1, value=1250.0 if i == 0 else 100.0, key=f"{key_prefix}_len_{i}")
+            if source != "Manual":
+                catalog = load_pexgol_catalog()
+                cls = st.selectbox("Clase PEXGOL", CLASSES, index=2, key=f"{key_prefix}_pex_class_{i}")
+                options = [r for r in catalog["rows"] if r["pressure_class"] == cls]
+                selected = st.selectbox("Referencia / diametro exterior", range(len(options)),
+                    format_func=lambda j: f"DE {options[j]['outside_diameter_mm']:g} mm | {options[j]['catalog_code']}",
+                    key=f"{key_prefix}_pex_ref_{i}_{cls}")
+                row = dict(options[selected])
+                row["provenance"] = asdict(catalog_provenance(row["page"]))
+                row["source_sha256"] = catalog["sha256"]
+                st.warning("BORRADOR SIN VERIFICAR: transcripcion del catalogo; pendiente de revision humana. Resultados preliminares.")
+                st.write(f"DI publicado: {row['inside_diameter_mm']:g} mm · Espesor: {row['wall_thickness_mm']:g} mm · SDR {row['sdr']:g} · Pagina {row['page']}")
+                for issue in row["issues"]:
+                    st.warning(issue)
+                if row['availability'] != 'standard':
+                    st.caption("Disponibilidad: " + ("bajo pedido especial" if row['availability'] == 'special_order' else "cantidad minima requerida"))
+                di = row["inside_diameter_mm"]
+                roughness = st.number_input("Rugosidad PEXGOL (mm)", min_value=0.0, value=0.0007, format="%.5f", key=f"{key_prefix}_pex_rough_{i}")
+                st.caption("Pagina 23: 0,0005–0,0007 mm. Se propone el extremo superior; editable segun servicio.")
+                row['roughness_used_mm'] = roughness
+                row['roughness_source'] = 'p. 23; extremo superior propuesto o valor editado por usuario'
+                row['allowable_pressure_bar'] = None
+                if fluid is not None and fluid.name == 'Agua':
+                    try:
+                        pressure, ref_temp = allowed_pressure_bar(cls, fluid.temperature_c)
+                        row.update(allowable_pressure_bar=pressure, design_temperature_c=fluid.temperature_c, table_temperature_c=ref_temp, pressure_source='Tabla 9.1, p. 9, agua, C=1.25')
+                        st.caption(f"Presion admisible preliminar: {pressure:g} bar a temperatura tabulada {ref_temp} C (escalon superior, sin interpolar).")
+                    except ValueError as exc:
+                        st.warning(str(exc))
+                elif fluid is not None:
+                    st.warning("Tabla 9.1 solo para agua. Presion admisible no evaluada para fluido personalizado.")
+                pn_label = f"PEXGOL Clase {cls}"
+            else:
+                col2, col3 = st.columns(2)
+                di = col2.number_input("Diametro interior (mm)", min_value=1.0, value=250.0, key=f"{key_prefix}_di_{i}")
+                roughness = col3.number_input("Rugosidad absoluta (mm)", min_value=0.0, value=0.007, format="%.4f", key=f"{key_prefix}_rough_{i}")
+                pn_label = st.selectbox("Clase de presion (PN) — referencia a 20 C, sin derateo", list(PN_BAR_TABLE), index=1, key=f"{key_prefix}_pn_{i}") if show_pressure_class else None
             if show_pressure_class:
-                pn_label = st.selectbox(
-                    "Clase de presion (PN) — referencia nominal a 20 C para agua, sin derateo por temperatura",
-                    list(PN_BAR_TABLE.keys()), index=1, key=f"{key_prefix}_pn_{i}",
-                )
                 pn_labels.append(pn_label)
+            catalog_rows.append(row)
             fitting_names = st.multiselect("Accesorios en este tramo", list(FITTING_K_TABLE.keys()), key=f"{key_prefix}_fit_names_{i}")
             fitting_counts = {}
             for name in fitting_names:
@@ -272,7 +310,7 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True) 
             total_length += length
     if n_segments > 1:
         st.caption(f"Longitud total: {total_length:.2f} m")
-    return segments, pn_labels
+    return segments, pn_labels, catalog_rows
 
 
 def _render_pump_curve_section(key_prefix: str):
@@ -349,7 +387,7 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
             "Altura de succion (m) — positivo = succion en elevacion, negativo = succion inundada",
             value=3.0, key=f"{key_prefix}_npsh_suction_head",
         )
-        suction_segment = _render_segments_section(f"{key_prefix}_npsh_suction", show_pressure_class=False)[0][0] if st.checkbox(
+        suction_segment = _render_segments_section(f"{key_prefix}_npsh_suction", show_pressure_class=False, fluid=fluid)[0][0] if st.checkbox(
             "Definir tramo de succion (para friccion)", key=f"{key_prefix}_npsh_suction_seg_toggle"
         ) else None
 
@@ -377,7 +415,7 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
         return check
 
 
-def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_head_m, fluid, static_head_m):
+def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_head_m, fluid, static_head_m, catalog_rows=None):
     st.subheader("Presion de diseno vs clase PN (condicion de caudal cero / shutoff)")
     st.caption(
         "Ausente en PiezoCalc (su columna 'Presion' queda como 'no evaluado'). A caudal "
@@ -391,13 +429,20 @@ def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_hea
         st.info("Sin punto de operacion nominal o sin clases PN definidas — no se evalua.")
         return None
 
-    checks = build_shutoff_pressure_profile(segments, shutoff_head_m, static_head_m, fluid.density_kg_m3, pn_labels)
+    catalog_rows = catalog_rows or [None] * len(segments)
+    limits = [r['allowable_pressure_bar'] if r else PN_BAR_TABLE[pn] for r, pn in zip(catalog_rows, pn_labels)]
+    if any(p is None for p in limits):
+        st.warning("Presion no evaluada: hay un tramo PEXGOL fuera del alcance de la tabla de agua/temperatura.")
+        return None
+    if any(catalog_rows):
+        st.warning("Comparacion PRELIMINAR con catalogo sin verificar. PASS no significa aprobacion para diseno.")
+    checks = build_shutoff_pressure_profile(segments, shutoff_head_m, static_head_m, fluid.density_kg_m3, pn_labels, allowable_pressures_bar=limits)
     st.dataframe(
         [
             {
                 "Tramo": c.label, "Desde (m)": round(c.start_length_m, 1), "Hasta (m)": round(c.end_length_m, 1),
                 "Presion de diseno (bar)": round(c.max_design_pressure_bar, 2), "Clase": c.pn_label,
-                "PN (bar)": c.pn_bar, "Margen (bar)": round(c.margin_bar, 2), "Estado": "PASS" if c.passed else "FAIL",
+                "Admisible (bar)": c.pn_bar, "Margen (bar)": round(c.margin_bar, 2), "Estado": "PASS" if c.passed else "FAIL",
             }
             for c in checks
         ],
@@ -411,7 +456,7 @@ def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_hea
     return checks
 
 
-def _render_surge_section(key_prefix, segments, fluid, nominal):
+def _render_surge_section(key_prefix, segments, fluid, nominal, catalog_rows=None):
     with st.expander("Golpe de ariete (transiente) — opcional"):
         st.caption(
             "Ausente en PiezoCalc y en la planilla de referencia. Modelo simplificado "
@@ -431,8 +476,22 @@ def _render_surge_section(key_prefix, segments, fluid, nominal):
         segment = segments[idx]
 
         col1, col2, col3 = st.columns(3)
-        material = col1.selectbox("Material de la tuberia", list(PIPE_ELASTIC_MODULUS_PA.keys()), key=f"{key_prefix}_surge_material")
-        wall_thickness_mm = col2.number_input("Espesor de pared (mm)", min_value=0.1, value=14.8, key=f"{key_prefix}_surge_wall")
+        row = catalog_rows[idx] if catalog_rows else None
+        if row:
+            material = "PEXGOL"
+            wall_thickness_mm = row['wall_thickness_mm']
+            col2.metric("Espesor catalogo (mm)", f"{wall_thickness_mm:g}")
+            elastic_mpa = col1.number_input("Modulo E corto plazo (MPa) — ingresado por usuario", min_value=0.1, value=465.0, key=f"{key_prefix}_surge_pex_E_{idx}")
+            st.caption("465 MPa es el ejemplo PEXGOL enterrado a 20 C (p. 46); no es una tabla universal. Ajustar E para temperatura y condiciones reales.")
+            if not st.checkbox("Usar este E como supuesto para la estimacion preliminar", key=f"{key_prefix}_surge_pex_E_use_{idx}"):
+                return None
+            elastic_pa = elastic_mpa * 1e6
+            row['surge_elastic_modulus_pa'] = elastic_pa
+            row['surge_elastic_modulus_source'] = 'Supuesto del usuario; referencia ejemplo p. 46, 465 MPa a 20 C'
+        else:
+            material = col1.selectbox("Material de la tuberia", list(PIPE_ELASTIC_MODULUS_PA.keys()), key=f"{key_prefix}_surge_material")
+            wall_thickness_mm = col2.number_input("Espesor de pared (mm)", min_value=0.1, value=14.8, key=f"{key_prefix}_surge_wall")
+            elastic_pa = PIPE_ELASTIC_MODULUS_PA[material]
         closure_time_s = col3.number_input("Tiempo de cierre de la valvula (s)", min_value=0.01, value=2.0, key=f"{key_prefix}_surge_closure")
 
         q_op = nominal["Q (L/s)"] / 1000.0
@@ -443,7 +502,7 @@ def _render_surge_section(key_prefix, segments, fluid, nominal):
             length_m=segment.length_m, delta_velocity_m_s=v_operating, closure_time_s=closure_time_s,
             fluid_bulk_modulus_pa=WATER_BULK_MODULUS_PA, density_kg_m3=fluid.density_kg_m3,
             inside_diameter_m=segment.inside_diameter_m, wall_thickness_m=wall_thickness_mm / 1000.0,
-            pipe_elastic_modulus_pa=PIPE_ELASTIC_MODULUS_PA[material], static_head_before_m=nominal["H (m)"],
+            pipe_elastic_modulus_pa=elastic_pa, static_head_before_m=nominal["H (m)"],
         )
         if material != "HDPE" or fluid.name != "Agua":
             st.caption(
@@ -465,7 +524,7 @@ def _render_surge_section(key_prefix, segments, fluid, nominal):
         return result
 
 
-def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result):
+def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows=None):
     st.subheader("Exportar caso (JSON)")
     case = {
         "fluido": {
@@ -477,6 +536,7 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
                 "label": s.label, "longitud_m": s.length_m, "diametro_interior_mm": s.inside_diameter_mm,
                 "rugosidad_mm": s.roughness_mm, "accesorios": s.fitting_counts,
                 "clase_pn": pn_labels[i] if i < len(pn_labels) else None,
+                "catalogo": catalog_rows[i] if catalog_rows else None,
             }
             for i, s in enumerate(segments)
         ],
@@ -496,7 +556,7 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
             "regimen": surge_result.closure_regime, "sobrepresion_m": surge_result.surge_head_m,
             "presion_pico_m": surge_result.peak_pressure_head_m,
         },
-        "_aviso": "MODELO DE INGENIERIA generado por core/hydraulics/ (SonBESB) — no reemplaza calculo de proveedor ni norma de diseno del proyecto.",
+        "_aviso": "MODELO DE INGENIERIA generado por BESB Piping (core/hydraulics/) — no reemplaza calculo de proveedor ni norma de diseno del proyecto.",
     }
     st.download_button(
         "Descargar caso (JSON)", data=json.dumps(case, indent=2, ensure_ascii=False),

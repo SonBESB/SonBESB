@@ -30,6 +30,7 @@ que su PN nominal.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from core.hydraulics.system_curve import PipeSegment
 
@@ -64,15 +65,25 @@ def build_shutoff_pressure_profile(
     density_kg_m3: float,
     pn_labels: list[str],
     g: float = 9.80665,
+    *,
+    allowable_pressures_bar: list[float] | None = None,
 ) -> list[SegmentPressureCheck]:
     """Presion de diseno (a Q=0) al inicio de cada tramo vs su clase PN.
 
-    pn_labels debe tener el mismo largo que segments (un PN por tramo).
+    pn_labels debe tener el mismo largo que segments (una etiqueta por tramo).
+    allowable_pressures_bar permite limites de catalogo por temperatura;
+    si se omite se conserva el lookup PN nominal a 20 C.
     La elevacion se reparte proporcional a la longitud acumulada de
     static_head_m (ver limitacion en el docstring del modulo).
     """
     if len(segments) != len(pn_labels):
         raise ValueError("segments y pn_labels deben tener el mismo largo.")
+
+    if allowable_pressures_bar is not None:
+        if len(allowable_pressures_bar) != len(segments):
+            raise ValueError("Una presion admisible por tramo es requerida.")
+        if any(not math.isfinite(p) or p <= 0 for p in allowable_pressures_bar):
+            raise ValueError("Presiones admisibles deben ser finitas y positivas.")
 
     total_length = sum(s.length_m for s in segments)
     if total_length <= 0:
@@ -80,10 +91,10 @@ def build_shutoff_pressure_profile(
 
     results = []
     cumulative = 0.0
-    for segment, pn_label in zip(segments, pn_labels):
-        if pn_label not in PN_BAR_TABLE:
+    for i, (segment, pn_label) in enumerate(zip(segments, pn_labels)):
+        if allowable_pressures_bar is None and pn_label not in PN_BAR_TABLE:
             raise KeyError(f"Clase de presion '{pn_label}' no esta en PN_BAR_TABLE.")
-        pn_bar = PN_BAR_TABLE[pn_label]
+        pn_bar = PN_BAR_TABLE[pn_label] if allowable_pressures_bar is None else allowable_pressures_bar[i]
 
         elevation_at_start = static_head_m * (cumulative / total_length)
         pressure_head_at_start = shutoff_head_m - elevation_at_start
