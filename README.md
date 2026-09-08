@@ -86,6 +86,15 @@ mantiene como caso de regresion/escalabilidad.
   **`PLANT3D_PACKAGE_READY_FOR_VALIDATION`** — nunca `PLANT3D_VALIDATED`
   sin una prueba real en una maquina Windows con Plant 3D instalado (ver
   `docs/PLANT3D_MODEL_ACCEPTANCE.md`).
+- **Bombeo — Punto de Operacion** (`core/hydraulics/`, pestaña propia en
+  la UI): modulo independiente del codo HDPE, para el caudal de
+  equilibrio entre una curva de bomba y una curva de sistema (tramos en
+  serie + accesorios). Factor de friccion por Colebrook-White real
+  (viscosidad explicita, no agua fija), ajuste de curva por regresion
+  (no interpolacion lineal de 3 puntos), leyes de afinidad con
+  eficiencia trasladada por punto, y verificacion NPSH disponible vs
+  requerido con margen de seguridad. Metodologia, fuentes y
+  limitaciones conocidas en `docs/HYDRAULICS_PUMP_OPERATING_POINT.md`.
 
 ## Instalacion
 
@@ -164,8 +173,10 @@ piping-component-generator/
     plant3d_validation/        # V0.3: evidencia real por etapa (vacia/plantilla hasta prueba manual)
     dist/plant3d/               # V0.3: paquete de despliegue generado para el Golden Case
         HDPE_SEGMENTED_ELBOW/
+    core/hydraulics/           # Bombeo: friccion, curva de sistema/bomba, punto de operacion,
+                              # afinidad (VDF/gemelas), NPSH, potencia — independiente del codo
     ui/                       # Streamlit + Plotly (2D, 3D, vista de ingenieria, cabecera de libreria,
-                              # seccion Plant 3D)
+                              # seccion Plant 3D, pestaña Bombeo)
     tests/
     docs/                     # ver lista completa mas abajo
 ```

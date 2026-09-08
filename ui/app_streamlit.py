@@ -53,6 +53,7 @@ from plant3d.generators.custom_script_generator import generate_custom_script
 from ui.engineering_view import build_engineering_figure
 from ui.plotly_view import build_elbow_figure
 from ui.plotly_view3d import build_elbow_figure_3d
+from ui.pump_operating_view import render_pump_operating_point_tab
 from ui.results_view import build_result_rows
 
 st.set_page_config(page_title="Piping Component Generator", layout="wide")
@@ -641,8 +642,8 @@ def main() -> None:
 
     repository = get_repository()
 
-    tab_normalized, tab_custom, tab_engineering = st.tabs(
-        ["Modo A — Normalizado", "Modo B — Personalizado", "Modo C — Ingenieria"]
+    tab_normalized, tab_custom, tab_engineering, tab_pumping = st.tabs(
+        ["Modo A — Normalizado", "Modo B — Personalizado", "Modo C — Ingenieria", "Bombeo — Punto de Operacion"]
     )
     with tab_normalized:
         render_normalized_tab(repository)
@@ -654,6 +655,8 @@ def main() -> None:
             "(edicion avanzada por segmento, puertos y propiedades Plant 3D). "
             "No implementado todavia."
         )
+    with tab_pumping:
+        render_pump_operating_point_tab()
 
     render_available_libraries()
     render_plant3d_section(repository)
