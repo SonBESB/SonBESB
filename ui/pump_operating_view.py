@@ -210,15 +210,20 @@ def _render_fluid_section(key_prefix: str) -> FluidProperties:
 
 def _render_segments_section(key_prefix: str) -> list[PipeSegment]:
     st.markdown("**Linea de impulsion — tramos en serie**")
-    n_segments = st.radio("Numero de tramos", [1, 2], horizontal=True, key=f"{key_prefix}_n_segments")
+    st.caption(
+        "Cualquier numero de tramos (el motor de calculo no tiene limite; los diametros "
+        "pueden variar entre tramos, ej. reduccion a mitad de linea). Sigue siendo un "
+        "modelo de tramos EN SERIE — no soporta ramificaciones/derivaciones de caudal."
+    )
+    n_segments = st.number_input("Numero de tramos", min_value=1, max_value=12, value=1, step=1, key=f"{key_prefix}_n_segments")
     segments = []
-    cols = st.columns(n_segments)
-    for i in range(n_segments):
-        with cols[i]:
-            st.markdown(f"*Tramo {i + 1}*")
-            length = st.number_input("Longitud (m)", min_value=0.1, value=1250.0 if i == 0 else 100.0, key=f"{key_prefix}_len_{i}")
-            di = st.number_input("Diametro interior (mm)", min_value=1.0, value=250.0, key=f"{key_prefix}_di_{i}")
-            roughness = st.number_input("Rugosidad absoluta (mm)", min_value=0.0, value=0.007, format="%.4f", key=f"{key_prefix}_rough_{i}")
+    total_length = 0.0
+    for i in range(int(n_segments)):
+        with st.expander(f"Tramo {i + 1}", expanded=(i == 0)):
+            col1, col2, col3 = st.columns(3)
+            length = col1.number_input("Longitud (m)", min_value=0.1, value=1250.0 if i == 0 else 100.0, key=f"{key_prefix}_len_{i}")
+            di = col2.number_input("Diametro interior (mm)", min_value=1.0, value=250.0, key=f"{key_prefix}_di_{i}")
+            roughness = col3.number_input("Rugosidad absoluta (mm)", min_value=0.0, value=0.007, format="%.4f", key=f"{key_prefix}_rough_{i}")
             fitting_names = st.multiselect("Accesorios en este tramo", list(FITTING_K_TABLE.keys()), key=f"{key_prefix}_fit_names_{i}")
             fitting_counts = {}
             for name in fitting_names:
@@ -226,6 +231,9 @@ def _render_segments_section(key_prefix: str) -> list[PipeSegment]:
                 if name in FITTING_K_DISCREPANCIES:
                     st.caption(f"⚠ {FITTING_K_DISCREPANCIES[name]}")
             segments.append(PipeSegment(label=f"Tramo {i + 1}", length_m=length, inside_diameter_mm=di, roughness_mm=roughness, fitting_counts=fitting_counts))
+            total_length += length
+    if n_segments > 1:
+        st.caption(f"Longitud total: {total_length:.2f} m")
     return segments
 
 
