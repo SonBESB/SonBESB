@@ -662,5 +662,21 @@ def main() -> None:
     render_plant3d_section(repository)
 
 
+def pumping_main() -> None:
+    st.markdown("""<style>
+    .block-container {max-width:1440px; padding-top:2rem;}
+    h1 {letter-spacing:-0.035em;}
+    [data-testid="stMetric"] {background:#edf5fc; border:1px solid #d2e4f3; border-radius:12px; padding:14px;}
+    [data-testid="stMetricValue"] {color:#125b95;}
+    [data-testid="stExpander"] {border-radius:12px;}
+    .stDownloadButton button {background:#125b95; color:white; border-radius:8px;}
+    </style>""", unsafe_allow_html=True)
+    st.title("BESB Piping")
+    st.markdown("**Calculadora de bombeo**")
+    render_pump_operating_point_tab()
+    with st.expander("Acerca de los cálculos y sus límites"):
+        st.write("Estimación de ingeniería para tramos en serie. Revisa los resultados con los datos del fabricante y los criterios de tu proyecto. Los accesorios usan coeficientes genéricos; el catálogo PEXGOL está pendiente de revisión humana.")
+
+
 if __name__ == "__main__":
-    main()
+    pumping_main()

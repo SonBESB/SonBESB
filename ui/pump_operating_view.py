@@ -40,55 +40,49 @@ _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadratica (
 
 
 def render_pump_operating_point_tab() -> None:
-    st.markdown(
-        "Calcula el punto de operacion (interseccion curva de bomba / curva de sistema) "
-        "de una linea de impulsion con tramos en serie. Motor de calculo propio "
-        "(`core/hydraulics/`) — metodologia y fuentes citadas en "
-        "`docs/HYDRAULICS_PUMP_OPERATING_POINT.md`. Todo se recalcula en vivo al cambiar "
-        "un input."
-    )
-    st.warning(
-        "MODELO DE INGENIERIA — no reemplaza el calculo/seleccion de bomba de un "
-        "proveedor ni la norma de diseno del proyecto. Los coeficientes K de accesorios "
-        "son de tabla generica (ver aviso en la seccion de piezas especiales), no de "
-        "catalogo especifico al diametro."
-    )
-
-    fluid = _render_fluid_section("pump")
-    segments, pn_labels, catalog_rows = _render_segments_section("pump", fluid=fluid)
-    static_head_m = st.number_input(
-        "Altura estatica del sistema (delta de cota, deposito destino - origen) [m]",
-        value=18.5, step=0.1, key="pump_static_head",
-    )
-
-    q_points, h_points, eta_points, degree = _render_pump_curve_section("pump")
-    if len(q_points) < degree + 1:
-        st.error(f"Se necesitan al menos {degree + 1} puntos para un ajuste de grado {degree}.")
-        return
-
-    motor_efficiency_pct = st.number_input("Eficiencia motor (%)", min_value=1.0, max_value=100.0, value=92.0, key="pump_eta_motor")
-    scenarios = _render_scenarios_section("pump")
-
-    base_curve = PumpCurve(
-        points=tuple(
-            PumpCurvePoint(flow_m3_s=q / 1000.0, head_m=h, efficiency=(e / 100.0 if e is not None else None))
-            for q, h, e in zip(q_points, h_points, eta_points)
-        ),
-        label="Bomba nominal",
-    )
-    flat_efficiency_pct = None
-    if any(e is None for e in eta_points):
-        if any(e is not None for e in eta_points):
-            st.error(
-                "Curva de eficiencia incompleta: o se define eta para TODOS los puntos de la "
-                "curva de bomba, o para NINGUNO (en ese caso se usa un valor constante abajo). "
-                "No se interpola un valor faltante."
-            )
-            return
-        flat_efficiency_pct = st.number_input(
-            "Eficiencia de bomba constante (%) — asumida, no medida por punto",
-            min_value=1.0, max_value=100.0, value=75.0, key="pump_eta_flat",
+    st.caption("Define tu sistema y compara el desempeño de tu bomba. Los resultados se actualizan al editar los datos.")
+    inputs, outputs = st.columns([1, 1.35], gap="large")
+    with inputs:
+        st.subheader("Configura tu bombeo")
+        system_tab, pump_tab = st.tabs(["1 · Sistema", "2 · Bomba"])
+    with system_tab:
+        fluid = _render_fluid_section("pump")
+        segments, pn_labels, catalog_rows = _render_segments_section("pump", fluid=fluid)
+        static_head_m = st.number_input(
+            "Desnivel entre destino y origen (m)",
+            value=18.5, step=0.1, key="pump_static_head",
         )
+
+    with pump_tab:
+        q_points, h_points, eta_points, degree = _render_pump_curve_section("pump")
+        if len(q_points) < degree + 1:
+            st.error(f"Se necesitan al menos {degree + 1} puntos para un ajuste de grado {degree}.")
+            return
+
+        motor_efficiency_pct = st.number_input("Eficiencia motor (%)", min_value=1.0, max_value=100.0, value=92.0, key="pump_eta_motor")
+        with st.expander("Comparar velocidades y bombas en serie / paralelo"):
+            scenarios = _render_scenarios_section("pump")
+
+        base_curve = PumpCurve(
+            points=tuple(
+                PumpCurvePoint(flow_m3_s=q / 1000.0, head_m=h, efficiency=(e / 100.0 if e is not None else None))
+                for q, h, e in zip(q_points, h_points, eta_points)
+            ),
+            label="Bomba nominal",
+        )
+        flat_efficiency_pct = None
+        if any(e is None for e in eta_points):
+            if any(e is not None for e in eta_points):
+                st.error(
+                    "Curva de eficiencia incompleta: o se define eta para TODOS los puntos de la "
+                    "curva de bomba, o para NINGUNO (en ese caso se usa un valor constante abajo). "
+                    "No se interpola un valor faltante."
+                )
+                return
+            flat_efficiency_pct = st.number_input(
+                "Eficiencia de bomba constante (%) — asumida, no medida por punto",
+                min_value=1.0, max_value=100.0, value=75.0, key="pump_eta_flat",
+            )
 
     q_max_curve = max(q_points) / 1000.0
     flow_range = np.linspace(0.0, q_max_curve * 1.05, 60).tolist()
@@ -164,56 +158,70 @@ def render_pump_operating_point_tab() -> None:
                 }
             )
 
-    fig.update_layout(
-        title="Punto de operacion — curva de bomba vs curva de sistema",
-        xaxis_title="Caudal Q (L/s)", yaxis_title="Carga H (m)", height=480,
-    )
-    st.plotly_chart(fig, use_container_width=True, key="pump_operating_chart")
-
-    st.subheader("Resultados por escenario")
-    st.dataframe(results, use_container_width=True, hide_index=True)
-
     nominal = next((r for r in results if r["Escenario"] == "Nominal" and r["Q (L/s)"] is not None), None)
+    with outputs:
+        st.subheader("3 · Tu punto de operación")
+        if nominal:
+            flow, head, power = st.columns(3)
+            flow.metric("Caudal", f"{nominal['Q (L/s)']:.2f} L/s")
+            head.metric("Altura", f"{nominal['H (m)']:.2f} m")
+            power.metric("Potencia eléctrica", f"{nominal['P electrica (kW)']:.2f} kW")
+        else:
+            st.info("No hay un punto de equilibrio. Revisa la curva y el desnivel de tu sistema.")
+        fig.update_layout(
+            xaxis_title="Caudal (L/s)", yaxis_title="Altura (m)", height=390,
+            margin=dict(l=10, r=10, t=25, b=10),
+            legend=dict(orientation="h", y=-0.2), template="plotly_white",
+            font=dict(family="sans-serif", size=14),
+        )
+        st.plotly_chart(fig, use_container_width=True, key="pump_operating_chart")
+        st.caption("El cruce de las curvas indica el caudal y la altura de funcionamiento.")
+        with st.expander("Comparación de escenarios"):
+            st.dataframe(results, use_container_width=True, hide_index=True)
+        if any(catalog_rows):
+            st.caption("PEXGOL · Catálogo preliminar pendiente de revisión humana.")
 
-    st.subheader("Detalle por tramo (en el punto de operacion nominal)")
-    col_vmin, col_vmax = st.columns(2)
-    v_min = col_vmin.number_input("Velocidad minima recomendada (m/s) — guia, no norma", min_value=0.0, value=DEFAULT_MIN_VELOCITY_M_S, key="pump_vmin")
-    v_max = col_vmax.number_input("Velocidad maxima recomendada (m/s) — guia, no norma", min_value=0.1, value=DEFAULT_MAX_VELOCITY_M_S, key="pump_vmax")
+    with st.expander("Velocidad y pérdidas por tramo"):
+        st.subheader("Detalle por tramo (en el punto de operacion nominal)")
+        col_vmin, col_vmax = st.columns(2)
+        v_min = col_vmin.number_input("Velocidad minima recomendada (m/s) — guia, no norma", min_value=0.0, value=DEFAULT_MIN_VELOCITY_M_S, key="pump_vmin")
+        v_max = col_vmax.number_input("Velocidad maxima recomendada (m/s) — guia, no norma", min_value=0.1, value=DEFAULT_MAX_VELOCITY_M_S, key="pump_vmax")
 
-    velocity_checks = []
-    if nominal:
-        q_op = nominal["Q (L/s)"] / 1000.0
-        detail = evaluate_system(segments, q_op, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
-        rows = []
-        for seg, ev in zip(segments, detail.segment_evaluations):
-            vcheck = check_velocity(ev.label, ev.velocity_m_s, v_min, v_max)
-            velocity_checks.append(vcheck)
-            rows.append(
-                {
-                    "Tramo": ev.label, "L (m)": seg.length_m, "DI (mm)": seg.inside_diameter_mm,
-                    "v (m/s)": round(ev.velocity_m_s, 3), "v OK?": vcheck.status, "Re": f"{ev.reynolds:.3e}",
-                    "Regimen": ev.regime.value, "f": round(ev.friction_factor, 4),
-                    "hf (m)": round(ev.friction_head_loss_m, 3), "hs (m)": round(ev.minor_head_loss_m, 3),
-                    "Convergio": ev.friction_converged,
-                }
-            )
-        st.dataframe(rows, use_container_width=True, hide_index=True)
-        for ev in detail.segment_evaluations:
-            if not ev.friction_converged or ev.regime.value == "transicional":
-                st.warning(f"{ev.label}: {ev.friction_note}")
-        for vcheck in velocity_checks:
-            if vcheck.status == "BAJA":
-                st.warning(f"{vcheck.label}: v={vcheck.velocity_m_s:.3f} m/s por debajo de {vcheck.min_velocity_m_s:g} m/s — riesgo de sedimentacion/deposito.")
-            elif vcheck.status == "ALTA":
-                st.warning(f"{vcheck.label}: v={vcheck.velocity_m_s:.3f} m/s por encima de {vcheck.max_velocity_m_s:g} m/s — riesgo de erosion/golpe de ariete mas severo.")
-    else:
-        st.info("Sin punto de operacion nominal (ver estado en la tabla de resultados) — no se muestra detalle por tramo.")
+        velocity_checks = []
+        if nominal:
+            q_op = nominal["Q (L/s)"] / 1000.0
+            detail = evaluate_system(segments, q_op, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
+            rows = []
+            for seg, ev in zip(segments, detail.segment_evaluations):
+                vcheck = check_velocity(ev.label, ev.velocity_m_s, v_min, v_max)
+                velocity_checks.append(vcheck)
+                rows.append(
+                    {
+                        "Tramo": ev.label, "L (m)": seg.length_m, "DI (mm)": seg.inside_diameter_mm,
+                        "v (m/s)": round(ev.velocity_m_s, 3), "v OK?": vcheck.status, "Re": f"{ev.reynolds:.3e}",
+                        "Regimen": ev.regime.value, "f": round(ev.friction_factor, 4),
+                        "hf (m)": round(ev.friction_head_loss_m, 3), "hs (m)": round(ev.minor_head_loss_m, 3),
+                        "Convergio": ev.friction_converged,
+                    }
+                )
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+            for ev in detail.segment_evaluations:
+                if not ev.friction_converged or ev.regime.value == "transicional":
+                    st.warning(f"{ev.label}: {ev.friction_note}")
+            for vcheck in velocity_checks:
+                if vcheck.status == "BAJA":
+                    st.warning(f"{vcheck.label}: v={vcheck.velocity_m_s:.3f} m/s por debajo de {vcheck.min_velocity_m_s:g} m/s — riesgo de sedimentacion/deposito.")
+                elif vcheck.status == "ALTA":
+                    st.warning(f"{vcheck.label}: v={vcheck.velocity_m_s:.3f} m/s por encima de {vcheck.max_velocity_m_s:g} m/s — riesgo de erosion/golpe de ariete mas severo.")
+        else:
+            st.info("Sin punto de operacion nominal (ver estado en la tabla de resultados) — no se muestra detalle por tramo.")
 
-    pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, static_head_m, catalog_rows)
+    with st.expander("Presión admisible de las tuberías"):
+        pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, static_head_m, catalog_rows)
     npsh_result = _render_npsh_section("pump", fluid, nominal)
     surge_result = _render_surge_section("pump", segments, fluid, nominal, catalog_rows)
 
-    st.subheader("Resumen ejecutivo")
+    st.subheader("Resumen de tu sistema")
     if any(catalog_rows):
         st.warning("Caso PRELIMINAR: contiene datos PEXGOL DRAFT_UNVERIFIED.")
     st.markdown(_build_executive_summary(nominal, results, npsh_result, segments, velocity_checks, pressure_checks, surge_result))
@@ -244,12 +252,8 @@ def _render_fluid_section(key_prefix: str) -> FluidProperties:
 
 
 def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, fluid=None):
-    st.markdown("**Linea de impulsion — tramos en serie**")
-    st.caption(
-        "Cualquier numero de tramos (el motor de calculo no tiene limite; los diametros "
-        "pueden variar entre tramos, ej. reduccion a mitad de linea). Sigue siendo un "
-        "modelo de tramos EN SERIE — no soporta ramificaciones/derivaciones de caudal."
-    )
+    st.markdown("**Tuberías de impulsión**")
+    st.caption("Añade un tramo cuando cambie el diámetro o el material de la línea. Modelo de tramos en serie, sin ramificaciones.")
     n_segments = st.number_input("Numero de tramos", min_value=1, max_value=12, value=1, step=1, key=f"{key_prefix}_n_segments")
     segments = []
     pn_labels = []
@@ -270,7 +274,7 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, 
                 row = dict(options[selected])
                 row["provenance"] = asdict(catalog_provenance(row["page"]))
                 row["source_sha256"] = catalog["sha256"]
-                st.warning("BORRADOR SIN VERIFICAR: transcripcion del catalogo; pendiente de revision humana. Resultados preliminares.")
+                st.caption("Catálogo preliminar · datos pendientes de revisión humana.")
                 st.write(f"DI publicado: {row['inside_diameter_mm']:g} mm · Espesor: {row['wall_thickness_mm']:g} mm · SDR {row['sdr']:g} · Pagina {row['page']}")
                 for issue in row["issues"]:
                     st.warning(issue)
@@ -373,7 +377,7 @@ def _apply_scenario(base_curve: PumpCurve, scenario: dict) -> PumpCurve:
 def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict | None):
     with st.expander("Verificacion NPSH (succion) — opcional"):
         st.caption(
-            "Ausente por completo en PiezoCalc. NPSHa = (Patm - Pvap)/(rho*g) - h_succion - "
+            "Comprueba si la succión tiene margen suficiente para evitar cavitación. NPSHa = (Patm - Pvap)/(rho*g) - h_succion - "
             "h_friccion_succion - h_singulares_succion. Formulas y margen de seguridad "
             "documentados en docs/HYDRAULICS_PUMP_OPERATING_POINT.md."
         )
@@ -418,7 +422,7 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
 def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_head_m, fluid, static_head_m, catalog_rows=None):
     st.subheader("Presion de diseno vs clase PN (condicion de caudal cero / shutoff)")
     st.caption(
-        "Ausente en PiezoCalc (su columna 'Presion' queda como 'no evaluado'). A caudal "
+        "A caudal "
         "cero no hay perdida por friccion: toda la carga de la bomba en Q=0 aparece como "
         "presion estatica en la descarga — es la condicion mas exigente en regimen "
         "permanente (sin contar golpe de ariete, ver seccion aparte). Perfil de elevacion "
@@ -459,7 +463,7 @@ def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_hea
 def _render_surge_section(key_prefix, segments, fluid, nominal, catalog_rows=None):
     with st.expander("Golpe de ariete (transiente) — opcional"):
         st.caption(
-            "Ausente en PiezoCalc y en la planilla de referencia. Modelo simplificado "
+            "Estima la sobrepresión al cerrar una válvula. Modelo simplificado "
             "(Joukowsky + aproximacion de cierre lento, celeridad de tuberia de pared "
             "delgada) — no reemplaza un analisis transiente completo. Formulas y "
             "limitaciones en docs/HYDRAULICS_PUMP_OPERATING_POINT.md."
@@ -525,7 +529,7 @@ def _render_surge_section(key_prefix, segments, fluid, nominal, catalog_rows=Non
 
 
 def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows=None):
-    st.subheader("Exportar caso (JSON)")
+    st.subheader("Guarda tu caso")
     case = {
         "fluido": {
             "nombre": fluid.name, "densidad_kg_m3": fluid.density_kg_m3, "viscosidad_pa_s": fluid.viscosity_pa_s,
