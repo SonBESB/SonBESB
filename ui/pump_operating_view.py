@@ -40,6 +40,10 @@ _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadratica (
 
 
 def render_pump_operating_point_tab() -> None:
+    # Preserve controls while incomplete fluid fields temporarily stop rendering.
+    for key in list(st.session_state):
+        if key.startswith("pump_") and key not in {"pump_curve_editor", "pump_export"}:
+            st.session_state[key] = st.session_state[key]
     st.info("Empieza aquí: recorre los pasos 1 a 3 de arriba hacia abajo. Los valores cargados son un EJEMPLO; reemplázalos por los de tu instalación. Al llegar al paso 4 verás el resultado calculado.")
     st.markdown("**Necesitarás:** desnivel, longitud y diámetro interior de la tubería, y al menos tres puntos de la curva de tu bomba para el ajuste cuadrático inicial.")
     with st.container(border=True):
@@ -89,6 +93,9 @@ def render_pump_operating_point_tab() -> None:
                 "Eficiencia de bomba constante (%) — asumida, no medida por punto",
                 min_value=1.0, max_value=100.0, value=75.0, key="pump_eta_flat",
             )
+
+    if st.session_state.get("pump_fluid_incomplete", False):
+        return
 
     q_max_curve = max(q_points) / 1000.0
     flow_range = np.linspace(0.0, q_max_curve * 1.05, 60).tolist()
@@ -174,13 +181,34 @@ def render_pump_operating_point_tab() -> None:
             power.metric("Potencia eléctrica", f"{nominal['P electrica (kW)']:.2f} kW")
         else:
             st.info("No hay un punto de equilibrio. Revisa la curva y el desnivel de tu sistema.")
+        with st.expander("Formato y descarga de la gráfica"):
+            chart_title = st.text_input("Título de la gráfica", value="Curva de bombeo · BESB Piping", key="pump_chart_title")
+            style_a, style_b, style_c = st.columns(3)
+            chart_font_size = style_a.number_input("Tamaño de letra", min_value=12, max_value=24, value=16, key="pump_chart_font_size")
+            system_color = style_b.color_picker("Color del sistema", value="#526578", key="pump_chart_system_color")
+            pump_color = style_c.color_picker("Color de la bomba", value="#155A8A", key="pump_chart_pump_color")
+            export_format = st.selectbox("Formato de descarga", ["png", "svg"], key="pump_chart_format")
+            st.caption("Tipografía: Times New Roman, con alternativa serif si no está instalada en tu equipo. Sin logo. Descarga con el icono de cámara sobre la gráfica: PNG de alta resolución o SVG vectorial.")
+        fig.data[0].line.color = system_color
+        for trace in fig.data[1:]:
+            if trace.mode == "markers":
+                trace.marker.color = pump_color
+            else:
+                trace.line.color = pump_color
         fig.update_layout(
-            xaxis_title="Caudal (L/s)", yaxis_title="Altura (m)", height=390,
-            margin=dict(l=10, r=10, t=25, b=10),
+            title=dict(text=chart_title, x=0.5),
+            xaxis_title="Caudal (L/s)", yaxis_title="Altura (m)", height=480,
+            margin=dict(l=25, r=25, t=70, b=60),
             legend=dict(orientation="h", y=-0.2), template="plotly_white",
-            font=dict(family="sans-serif", size=14),
+            font=dict(family="Times New Roman, Times, serif", size=chart_font_size, color="#111111"),
+            paper_bgcolor="white", plot_bgcolor="white",
         )
-        st.plotly_chart(fig, use_container_width=True, key="pump_operating_chart")
+        fig.update_xaxes(showline=True, linecolor="#333333", ticks="outside", gridcolor="#e4e4e4")
+        fig.update_yaxes(showline=True, linecolor="#333333", ticks="outside", gridcolor="#e4e4e4")
+        st.plotly_chart(fig, use_container_width=True, key="pump_operating_chart", config={
+            "displaylogo": False,
+            "toImageButtonOptions": {"format": export_format, "filename": "BESB_Piping_curva", "width": 1600, "height": 1000, "scale": 2 if export_format == "png" else 1},
+        })
         st.caption("El cruce de las curvas indica el caudal y la altura de funcionamiento.")
         with st.expander("Comparación de escenarios"):
             st.dataframe(results, use_container_width=True, hide_index=True)
@@ -239,14 +267,25 @@ def render_pump_operating_point_tab() -> None:
 
 
 def _render_fluid_section(key_prefix: str) -> FluidProperties:
+    st.session_state[f"{key_prefix}_fluid_incomplete"] = False
     st.markdown("**Fluido**")
+    liquid = st.selectbox("Líquido a bombear", ["Agua", "Agua salina", "Agua con glicol", "Aceite", "Diésel", "Etanol", "Glicerina", "Otro líquido"], key=f"{key_prefix}_liquid")
+    st.caption("Agua: propiedades calculadas por temperatura. Para otros líquidos ingresa densidad y viscosidad de su ficha técnica a la temperatura de operación; el nombre no asigna propiedades automáticamente.")
     col1, col2, col3 = st.columns(3)
-    custom = col1.checkbox("Fluido personalizado (no agua)", key=f"{key_prefix}_fluid_custom")
+    override = col1.checkbox("Ingresar propiedades manualmente", key=f"{key_prefix}_fluid_custom")
+    custom = liquid != "Agua" or override
     if custom:
-        density = col2.number_input("Densidad (kg/m3)", min_value=1.0, value=1000.0, key=f"{key_prefix}_fluid_density")
-        viscosity = col3.number_input("Viscosidad dinamica (Pa.s)", min_value=1e-6, value=1.0e-3, format="%.6f", key=f"{key_prefix}_fluid_visc")
+        name = st.text_input("Nombre de tu líquido", key=f"{key_prefix}_fluid_name") if liquid == "Otro líquido" else liquid
+        density = col2.number_input("Densidad (kg/m3)", min_value=1.0, value=None, placeholder="Dato de tu ficha técnica", key=f"{key_prefix}_fluid_density")
+        viscosity = col3.number_input("Viscosidad dinamica (Pa.s)", min_value=1e-6, value=None, placeholder="Dato de tu ficha técnica", format="%.6f", key=f"{key_prefix}_fluid_visc")
         temperature = col1.number_input("Temperatura (C)", value=20.0, key=f"{key_prefix}_fluid_temp_custom")
-        fluid = custom_fluid("Personalizado", density, viscosity, temperature)
+        st.caption("Conversión: 1 cP = 0,001 Pa·s. Modelo para líquidos newtonianos; no representa pulpas o lodos no newtonianos.")
+        if density is None or viscosity is None or not name.strip():
+            st.info("Completa nombre, densidad y viscosidad para calcular con este líquido.")
+            st.session_state[f"{key_prefix}_fluid_incomplete"] = True
+        # Placeholders only keep the downstream input widgets mounted. No calculation
+        # or export is allowed until the real properties are supplied.
+        fluid = custom_fluid((name.strip() or "Personalizado") + (" (propiedades manuales)" if liquid == "Agua" else ""), density if density is not None else 1000.0, viscosity if viscosity is not None else 0.001, temperature)
         st.warning(f"{fluid.source}")
     else:
         temperature = col2.number_input("Temperatura (C)", min_value=0.0, max_value=100.0, value=20.0, key=f"{key_prefix}_fluid_temp")
@@ -414,6 +453,9 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
         if not enabled:
             return None
 
+        if fluid.name != "Agua":
+            st.info("NPSH no disponible para propiedades manuales: falta presión de vapor específica del líquido. La fórmula de agua no se aplica a este caso.")
+            return None
         col1, col2 = st.columns(2)
         altitude = col1.number_input("Altitud de la bomba (m s.n.m.)", value=0.0, key=f"{key_prefix}_npsh_alt")
         suction_head = col2.number_input(
@@ -573,6 +615,12 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
             }
             for i, s in enumerate(segments)
         ],
+        "grafica": {
+            "titulo": st.session_state.get("pump_chart_title", "Curva de bombeo · BESB Piping"),
+            "fuente": "Times New Roman, Times, serif", "tamano": st.session_state.get("pump_chart_font_size", 16),
+            "color_sistema": st.session_state.get("pump_chart_system_color", "#526578"),
+            "color_bomba": st.session_state.get("pump_chart_pump_color", "#155A8A"),
+        },
         "altura_estatica_m": static_head_m,
         "curva_bomba": {"grado_ajuste": degree, "puntos": [{"Q_L_s": q, "H_m": h, "eta_pct": e} for q, h, e in zip(q_points, h_points, eta_points)]},
         "resultados_por_escenario": results,

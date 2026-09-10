@@ -66,6 +66,8 @@ def test_ui_mixed_catalog_export_and_temperature_scope():
         assert case['tramos'][0]['catalogo']['surge_elastic_modulus_pa'] == 465e6
         assert case['golpe_de_ariete']['celeridad_m_s'] > 0
         at.checkbox(key='pump_fluid_custom').check().run()
+        at.number_input(key='pump_fluid_density').set_value(1000.0)
+        at.number_input(key='pump_fluid_visc').set_value(0.001).run()
         assert not at.exception
         case = json.loads(download.call_args.kwargs['data'])
         assert case['presion_vs_pn'] is None
