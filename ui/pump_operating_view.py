@@ -40,20 +40,26 @@ _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadratica (
 
 
 def render_pump_operating_point_tab() -> None:
-    st.caption("Define tu sistema y compara el desempeño de tu bomba. Los resultados se actualizan al editar los datos.")
-    inputs, outputs = st.columns([1, 1.35], gap="large")
-    with inputs:
-        st.subheader("Configura tu bombeo")
-        system_tab, pump_tab = st.tabs(["1 · Sistema", "2 · Bomba"])
-    with system_tab:
+    st.info("Empieza aquí: recorre los pasos 1 a 3 de arriba hacia abajo. Los valores cargados son un EJEMPLO; reemplázalos por los de tu instalación. Al llegar al paso 4 verás el resultado calculado.")
+    st.markdown("**Necesitarás:** desnivel, longitud y diámetro interior de la tubería, y al menos tres puntos de la curva de tu bomba para el ajuste cuadrático inicial.")
+    with st.container(border=True):
+        st.subheader("1 · ¿Qué líquido vas a bombear y hasta qué altura?")
+        st.write("Para agua, basta con indicar su temperatura. El desnivel es la cota del destino menos la cota del origen.")
         fluid = _render_fluid_section("pump")
-        segments, pn_labels, catalog_rows = _render_segments_section("pump", fluid=fluid)
         static_head_m = st.number_input(
             "Desnivel entre destino y origen (m)",
             value=18.5, step=0.1, key="pump_static_head",
+            help="Ejemplo: origen a 100 m y destino a 118,5 m → 18,5 m. No es la longitud de tubería. Si el destino está más abajo, usa un valor negativo.",
         )
 
-    with pump_tab:
+        st.caption("Ejemplo: origen 100 m → destino 118,5 m → desnivel +18,5 m.")
+    with st.container(border=True):
+        st.subheader("2 · ¿Cómo es tu tubería?")
+        st.write("Comienza con un tramo. Ingresa la longitud real del recorrido y el diámetro INTERIOR, o elige una referencia PEXGOL para cargar sus dimensiones.")
+        segments, pn_labels, catalog_rows = _render_segments_section("pump", fluid=fluid)
+    with st.container(border=True):
+        st.subheader("3 · Ingresa los datos de tu bomba")
+        st.write("Busca la curva Q–H del fabricante. Haz doble clic en las celdas para reemplazar el ejemplo: Q es caudal en L/s y H es altura en metros. Si no tienes esa curva, solo puedes explorar el ejemplo; no seleccionar tu bomba real.")
         q_points, h_points, eta_points, degree = _render_pump_curve_section("pump")
         if len(q_points) < degree + 1:
             st.error(f"Se necesitan al menos {degree + 1} puntos para un ajuste de grado {degree}.")
@@ -159,8 +165,8 @@ def render_pump_operating_point_tab() -> None:
             )
 
     nominal = next((r for r in results if r["Escenario"] == "Nominal" and r["Q (L/s)"] is not None), None)
-    with outputs:
-        st.subheader("3 · Tu punto de operación")
+    with st.container(border=True):
+        st.subheader("4 · Revisa el resultado de los datos ingresados")
         if nominal:
             flow, head, power = st.columns(3)
             flow.metric("Caudal", f"{nominal['Q (L/s)']:.2f} L/s")
@@ -181,6 +187,9 @@ def render_pump_operating_point_tab() -> None:
         if any(catalog_rows):
             st.caption("PEXGOL · Catálogo preliminar pendiente de revisión humana.")
 
+    _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree)
+    st.subheader("5 · Verificaciones y descarga")
+    st.caption("Después de revisar el caudal, comprueba presión, velocidad y, si tienes los datos, succión y cierre de válvulas.")
     with st.expander("Velocidad y pérdidas por tramo"):
         st.subheader("Detalle por tramo (en el punto de operacion nominal)")
         col_vmin, col_vmax = st.columns(2)
@@ -298,13 +307,13 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, 
                 pn_label = f"PEXGOL Clase {cls}"
             else:
                 col2, col3 = st.columns(2)
-                di = col2.number_input("Diametro interior (mm)", min_value=1.0, value=250.0, key=f"{key_prefix}_di_{i}")
-                roughness = col3.number_input("Rugosidad absoluta (mm)", min_value=0.0, value=0.007, format="%.4f", key=f"{key_prefix}_rough_{i}")
+                di = col2.number_input("Diametro interior (mm)", min_value=1.0, value=250.0, key=f"{key_prefix}_di_{i}", help="Usa el diámetro libre por donde circula el agua. No ingreses el diámetro exterior ni el DN sin comprobar su equivalencia.")
+                roughness = col3.number_input("Rugosidad absoluta (mm)", min_value=0.0, value=0.007, format="%.4f", key=f"{key_prefix}_rough_{i}", help="Irregularidad de la pared interior en mm. El 0,007 inicial es un supuesto del ejemplo; sustituye según material, fabricante y estado de servicio.")
                 pn_label = st.selectbox("Clase de presion (PN) — referencia a 20 C, sin derateo", list(PN_BAR_TABLE), index=1, key=f"{key_prefix}_pn_{i}") if show_pressure_class else None
             if show_pressure_class:
                 pn_labels.append(pn_label)
             catalog_rows.append(row)
-            fitting_names = st.multiselect("Accesorios en este tramo", list(FITTING_K_TABLE.keys()), key=f"{key_prefix}_fit_names_{i}")
+            fitting_names = st.multiselect("Accesorios en este tramo", list(FITTING_K_TABLE.keys()), key=f"{key_prefix}_fit_names_{i}", help="Selecciona codos, válvulas y otras piezas; después indica cuántas hay de cada una. Vacío significa que no se incluyen pérdidas por accesorios.")
             fitting_counts = {}
             for name in fitting_names:
                 fitting_counts[name] = st.number_input(f"{name} (K={FITTING_K_TABLE[name]:g})", min_value=0, value=1, step=1, key=f"{key_prefix}_fit_{i}_{name}")
@@ -320,6 +329,7 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, 
 def _render_pump_curve_section(key_prefix: str):
     st.markdown("**Curva de la bomba**")
     st.caption(
+        "Si la curva viene en m³/h, divide el caudal por 3,6 para obtener L/s. "
         "Ajuste por regresion de minimos cuadrados (no interpolacion lineal entre puntos). "
         "La columna eta (%) es opcional: si se completa para TODOS los puntos, la eficiencia "
         "se trata como curva (no como valor constante) en cada escenario."
@@ -329,11 +339,30 @@ def _render_pump_curve_section(key_prefix: str):
         {"Q (L/s)": 100.0, "H (m)": 34.0, "eta (%)": 0.0},
         {"Q (L/s)": 220.0, "H (m)": 24.0, "eta (%)": 0.0},
     ]
+    st.caption("Eficiencia eta (%): deja toda la columna en 0 o vacía si no tienes una curva de eficiencia; se pedirá una eficiencia constante asumida abajo.")
     edited = st.data_editor(default_rows, num_rows="dynamic", key=f"{key_prefix}_curve_editor", use_container_width=True)
-    q_points = [float(r["Q (L/s)"]) for r in edited if r.get("Q (L/s)") is not None]
-    h_points = [float(r["H (m)"]) for r in edited if r.get("H (m)") is not None]
-    eta_raw = [r.get("eta (%)") for r in edited if r.get("Q (L/s)") is not None]
-    eta_points = [(float(e) if e else None) for e in eta_raw]
+    valid_rows = []
+    for r in edited:
+        if r.get("Q (L/s)") is None and r.get("H (m)") is None:
+            continue
+        if r.get("Q (L/s)") is None or r.get("H (m)") is None:
+            st.error("Completa caudal Q y altura H en cada fila de la curva, o elimina la fila incompleta.")
+            st.stop()
+        q, h = float(r["Q (L/s)"]), float(r["H (m)"])
+        e = r.get("eta (%)")
+        if not np.isfinite(q) or not np.isfinite(h) or q < 0 or h < 0:
+            st.error("Q y H deben ser números finitos mayores o iguales a cero.")
+            st.stop()
+        if e is not None and (not np.isfinite(float(e)) or not 0 <= float(e) <= 100):
+            st.error("La eficiencia debe estar entre 0 y 100 %.")
+            st.stop()
+        valid_rows.append(r)
+    q_points = [float(r["Q (L/s)"]) for r in valid_rows]
+    h_points = [float(r["H (m)"]) for r in valid_rows]
+    eta_points = [float(r["eta (%)"]) if r.get("eta (%)") else None for r in valid_rows]
+    if not q_points or max(q_points) <= 0 or len(set(q_points)) != len(q_points):
+        st.error("Ingresa caudales distintos, con al menos uno mayor que cero.")
+        st.stop()
 
     degree_label = st.selectbox("Modelo de ajuste", list(_DEGREE_LABELS.keys()), index=2, key=f"{key_prefix}_degree")
     degree = _DEGREE_LABELS[degree_label]
@@ -630,3 +659,46 @@ def _build_executive_summary(nominal, results, npsh_result, segments, velocity_c
             "esta incluida en el chequeo de shutoff de arriba."
         )
     return "\n".join(lines)
+
+
+def _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree):
+    with st.expander("Ver fórmulas utilizadas y cómo se aplican a este caso", expanded=False):
+        st.write("El cálculo busca el caudal al que la altura entregada por la bomba iguala la altura requerida por tu sistema. Las ecuaciones usan unidades SI; los campos en L/s y mm se convierten antes de calcular.")
+        st.latex(r"Q_{\mathrm{m^3/s}}=Q_{\mathrm{L/s}}/1000,\quad D_{\mathrm m}=D_{\mathrm{mm}}/1000,\quad g=9.80665\;\mathrm{m/s^2}")
+        st.markdown("**A. Velocidad y pérdidas en cada tramo**")
+        st.latex(r"A=\frac{\pi D^2}{4},\quad v=\frac{Q}{A},\quad Re=\frac{\rho vD}{\mu}")
+        st.latex(r"h_f=f\frac{L}{D}\frac{v^2}{2g},\qquad h_s=\left(\sum_j n_jK_j\right)\frac{v^2}{2g}")
+        st.write("A: área interior (m²); v: velocidad (m/s); Re: Reynolds (sin unidad); ρ: densidad (kg/m³); μ: viscosidad dinámica (Pa·s). L es la longitud (m), f el factor de Darcy y K el coeficiente de cada accesorio repetido n veces. hf y hs se expresan en metros de columna de fluido.")
+        st.latex(r"f=64/Re\quad(Re<2300)")
+        st.latex(r"\frac{1}{\sqrt f}=-2\log_{10}\left(\frac{\varepsilon}{3.7D}+\frac{2.51}{Re\sqrt f}\right)")
+        st.caption("Colebrook–White se resuelve iterativamente; ε es rugosidad en metros. Entre Re=2300 y 4000 se usa como estimación con aviso de régimen transicional. En Q=0, las pérdidas son cero.")
+        st.markdown("**B. Curvas del sistema y de la bomba**")
+        st.latex(r"H_{\mathrm{sistema}}(Q)=\Delta z+\sum_i(h_{f,i}+h_{s,i}),\qquad H_{\mathrm{bomba}}(Q)=\sum_{k=0}^{d}a_kQ^k")
+        st.latex(r"H_{\mathrm{bomba}}(Q_*)=H_{\mathrm{sistema}}(Q_*)")
+        st.write("Δz es el desnivel destino menos origen (m). La curva de bomba se ajusta por mínimos cuadrados al grado elegido; el cruce se busca por bisección. En esta versión, la curva del sistema se interpola entre 60 puntos y fuera de su rango conserva el extremo: revisa el rango de la curva antes de interpretar escenarios alejados del nominal.")
+        fit = fit_polynomial([q / 1000 for q in q_points], h_points, degree)
+        terms = [f"({c:.6g})Q^{{{degree-i}}}" for i, c in enumerate(fit.coefficients)]
+        st.latex(r"H_{\mathrm{bomba,nominal}}(Q)=" + "+".join(terms))
+        st.caption(f"Ajuste de la curva ingresada, antes de combinar bombas: Q en m³/s, H en m. R² = {fit.r_squared:.5f}.")
+        st.markdown("**C. Potencia**")
+        st.latex(r"P_h=\rho gQH,\quad P_{\mathrm{eje}}=P_h/\eta_b,\quad P_e=P_h/(\eta_b\eta_m)")
+        st.write("Potencias en W (divide por 1000 para kW). ηb y ηm son eficiencias de bomba y motor como fracción: 75 % = 0,75. La eficiencia de bomba se interpola si ingresaste todos sus puntos; si no, se usa el valor constante asumido.")
+        if nominal:
+            q = nominal['Q (L/s)'] / 1000
+            detail = evaluate_system(segments, q, 0.0, fluid.density_kg_m3, fluid.viscosity_pa_s)
+            st.markdown("**Con tus datos actuales — por tramo**")
+            st.dataframe([{'Tramo': seg.label, 'L (m)': seg.length_m, 'D (m)': seg.inside_diameter_m,
+                'v (m/s)': ev.velocity_m_s, 'Re': ev.reynolds, 'f': ev.friction_factor,
+                'hf (m)': ev.friction_head_loss_m, 'hs (m)': ev.minor_head_loss_m}
+                for seg, ev in zip(segments, detail.segment_evaluations)], hide_index=True, use_container_width=True)
+            st.caption(f"Caudal nominal mostrado: {nominal['Q (L/s)']:.2f} L/s. ρ = {fluid.density_kg_m3:.2f} kg/m³; μ = {fluid.viscosity_pa_s:.6g} Pa·s. Esta tabla usa el caudal mostrado redondeado.")
+        st.markdown("**D. Comprobaciones opcionales**")
+        st.latex(r"p_i=\frac{\rho g\max(H_b(0)-z_i,0)}{10^5}\;[\mathrm{bar}],\quad p_i\le p_{\mathrm{admisible},i}")
+        st.caption("Presión a caudal cero: zi se reparte por longitud acumulada al inicio de cada tramo; no es un perfil topográfico real. PN manual se refiere a 20 °C. PEXGOL usa tabla 9.1 para agua y el escalón de temperatura superior, sin extrapolar.")
+        st.latex(r"NPSH_a=\frac{p_{atm}-p_v}{\rho g}-h_{succion}-h_{f,suc}-h_{s,suc}\ge NPSH_r+M")
+        st.latex(r"p_{atm}=101325\left(\frac{293-0.0065z}{293}\right)^{5.2561},\quad p_v=610.8\exp\left(\frac{17.27T}{T+237.3}\right)")
+        st.caption("Presiones en Pa; z: altitud (m); T: temperatura (°C); altura de succión positiva si la bomba está sobre el líquido. NPSHr proviene del fabricante y M es el margen en m. La expresión de vapor es para agua; no valida otros líquidos.")
+        st.latex(r"a=\sqrt{\frac{K_f/\rho}{1+K_fD/(Ee)}},\quad t_c=2L/a,\quad \Delta H=\begin{cases}a\Delta v/g&t\le t_c\\2L\Delta v/(gt)&t>t_c\end{cases}")
+        st.caption("Golpe de ariete simplificado: a (m/s), Kf módulo volumétrico del fluido (Pa), E módulo elástico de tubería (Pa), e espesor (m), t tiempo de cierre (s). Se usa restricción 1 y Kf de agua = 2,15×10⁹ Pa. La altura pico mostrada es H nominal + ΔH; no es una simulación transitoria de toda la red.")
+        st.latex(r"\phi=N/N_0,\quad Q'=\phi Q,\quad H'=\phi^2H,\quad P'=\phi^3P")
+        st.caption("Afinidad para cambio de velocidad N. Bombas idénticas: en paralelo se suman caudales a igual H; en serie se suman alturas a igual Q. La eficiencia de cada punto se traslada con la curva; una eficiencia constante sigue siendo un supuesto.")

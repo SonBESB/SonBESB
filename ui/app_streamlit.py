@@ -664,7 +664,7 @@ def main() -> None:
 
 def pumping_main() -> None:
     st.markdown("""<style>
-    .block-container {max-width:1440px; padding-top:2rem;}
+    .block-container {max-width:1100px; padding-top:2rem;}
     h1 {letter-spacing:-0.035em;}
     [data-testid="stMetric"] {background:#edf5fc; border:1px solid #d2e4f3; border-radius:12px; padding:14px;}
     [data-testid="stMetricValue"] {color:#125b95;}
