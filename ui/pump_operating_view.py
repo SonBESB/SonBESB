@@ -20,6 +20,7 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
+from core.hydraulics.energy_profile import illustrative_profile
 import json
 from dataclasses import asdict
 from core.hydraulics.pipe_catalog import CLASSES, load_pexgol_catalog, catalog_provenance, allowed_pressure_bar
@@ -42,7 +43,7 @@ _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadratica (
 def render_pump_operating_point_tab() -> None:
     # Preserve controls while incomplete fluid fields temporarily stop rendering.
     for key in list(st.session_state):
-        if key.startswith("pump_") and key not in {"pump_curve_editor", "pump_export"}:
+        if key.startswith("pump_") and key not in {"pump_curve_editor", "pump_export", "pump_add_scenario", "pump_remove_scenario"}:
             st.session_state[key] = st.session_state[key]
     st.info("Empieza aquí: recorre los pasos 1 a 3 de arriba hacia abajo. Los valores cargados son un EJEMPLO; reemplázalos por los de tu instalación. Al llegar al paso 4 verás el resultado calculado.")
     st.markdown("**Necesitarás:** desnivel, longitud y diámetro interior de la tubería, y al menos tres puntos de la curva de tu bomba para el ajuste cuadrático inicial.")
@@ -160,6 +161,10 @@ def render_pump_operating_point_tab() -> None:
                     "eta bomba (%)": round(eta * 100, 1),
                     "P hidraulica (kW)": round(power.hydraulic_power_w / 1000, 2),
                     "P electrica (kW)": round(power.electrical_power_w / 1000, 2),
+                    "P eje (kW)": round(power.shaft_power_w / 1000, 2),
+                    "P electrica (HP)": round(power.electrical_power_w / 745.699872, 2),
+                    "Velocidad por tramo (m/s)": "; ".join(f"{seg.label}: {op.flow_m3_s / seg.area_m2:.3f}" for seg in segments),
+                    "Relación de velocidad": scenario["phi"],
                     "Estado": "equilibrio",
                 }
             )
@@ -179,6 +184,16 @@ def render_pump_operating_point_tab() -> None:
             flow.metric("Caudal", f"{nominal['Q (L/s)']:.2f} L/s")
             head.metric("Altura", f"{nominal['H (m)']:.2f} m")
             power.metric("Potencia eléctrica", f"{nominal['P electrica (kW)']:.2f} kW")
+            summary_detail = evaluate_system(segments, nominal["Q (L/s)"] / 1000, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
+            more = st.columns(3)
+            more[0].metric("Pérdidas por fricción", f"{sum(e.friction_head_loss_m for e in summary_detail.segment_evaluations):.2f} m")
+            more[1].metric("Pérdidas por accesorios", f"{sum(e.minor_head_loss_m for e in summary_detail.segment_evaluations):.2f} m")
+            more[2].metric("Desnivel estático", f"{static_head_m:.2f} m")
+            powers = st.columns(3)
+            powers[0].metric("Potencia hidráulica", f"{nominal['P hidraulica (kW)']:.2f} kW")
+            powers[1].metric("Potencia al eje", f"{nominal['P eje (kW)']:.2f} kW")
+            powers[2].metric("Potencia eléctrica", f"{nominal['P electrica (HP)']:.2f} HP")
+
         else:
             st.info("No hay un punto de equilibrio. Revisa la curva y el desnivel de tu sistema.")
         with st.expander("Formato y descarga de la gráfica"):
@@ -190,11 +205,14 @@ def render_pump_operating_point_tab() -> None:
             export_format = st.selectbox("Formato de descarga", ["png", "svg"], key="pump_chart_format")
             st.caption("Tipografía: Times New Roman, con alternativa serif si no está instalada en tu equipo. Sin logo. Descarga con el icono de cámara sobre la gráfica: PNG de alta resolución o SVG vectorial.")
         fig.data[0].line.color = system_color
+        palette = [pump_color, "#0599A5", "#AA4586", "#A66A12", "#6B61AA", "#527A42"]
+        color_index = -1
         for trace in fig.data[1:]:
-            if trace.mode == "markers":
-                trace.marker.color = pump_color
+            if trace.mode != "markers":
+                color_index += 1
+                trace.line.color = palette[color_index % len(palette)]
             else:
-                trace.line.color = pump_color
+                trace.marker.color = palette[color_index % len(palette)]
         fig.update_layout(
             title=dict(text=chart_title, x=0.5),
             xaxis_title="Caudal (L/s)", yaxis_title="Altura (m)", height=480,
@@ -210,15 +228,16 @@ def render_pump_operating_point_tab() -> None:
             "toImageButtonOptions": {"format": export_format, "filename": "BESB_Piping_curva", "width": 1600, "height": 1000, "scale": 2 if export_format == "png" else 1},
         })
         st.caption("El cruce de las curvas indica el caudal y la altura de funcionamiento.")
-        with st.expander("Comparación de escenarios"):
+        with st.expander("Comparación de escenarios VDF", expanded=len(results) > 1):
             st.dataframe(results, use_container_width=True, hide_index=True)
         if any(catalog_rows):
             st.caption("PEXGOL · Catálogo preliminar pendiente de revisión humana.")
 
+    _render_energy_profile(segments, fluid, nominal, static_head_m)
     _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree)
     st.subheader("5 · Verificaciones y descarga")
     st.caption("Después de revisar el caudal, comprueba presión, velocidad y, si tienes los datos, succión y cierre de válvulas.")
-    with st.expander("Velocidad y pérdidas por tramo"):
+    with st.expander("Detalle por tramo: velocidad, pérdidas y clase de presión", expanded=True):
         st.subheader("Detalle por tramo (en el punto de operacion nominal)")
         col_vmin, col_vmax = st.columns(2)
         v_min = col_vmin.number_input("Velocidad minima recomendada (m/s) — guia, no norma", min_value=0.0, value=DEFAULT_MIN_VELOCITY_M_S, key="pump_vmin")
@@ -229,12 +248,14 @@ def render_pump_operating_point_tab() -> None:
             q_op = nominal["Q (L/s)"] / 1000.0
             detail = evaluate_system(segments, q_op, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
             rows = []
-            for seg, ev in zip(segments, detail.segment_evaluations):
+            for i, (seg, ev) in enumerate(zip(segments, detail.segment_evaluations)):
                 vcheck = check_velocity(ev.label, ev.velocity_m_s, v_min, v_max)
                 velocity_checks.append(vcheck)
                 rows.append(
                     {
                         "Tramo": ev.label, "L (m)": seg.length_m, "DI (mm)": seg.inside_diameter_mm,
+                        "Tubería": "PEXGOL" if catalog_rows[i] else "Dimensiones manuales",
+                        "Clase": pn_labels[i], "ΣK": seg.minor_loss_coefficient,
                         "v (m/s)": round(ev.velocity_m_s, 3), "v OK?": vcheck.status, "Re": f"{ev.reynolds:.3e}",
                         "Regimen": ev.regime.value, "f": round(ev.friction_factor, 4),
                         "hf (m)": round(ev.friction_head_loss_m, 3), "hs (m)": round(ev.minor_head_loss_m, 3),
@@ -352,12 +373,17 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, 
             if show_pressure_class:
                 pn_labels.append(pn_label)
             catalog_rows.append(row)
-            fitting_names = st.multiselect("Accesorios en este tramo", list(FITTING_K_TABLE.keys()), key=f"{key_prefix}_fit_names_{i}", help="Selecciona codos, válvulas y otras piezas; después indica cuántas hay de cada una. Vacío significa que no se incluyen pérdidas por accesorios.")
             fitting_counts = {}
-            for name in fitting_names:
-                fitting_counts[name] = st.number_input(f"{name} (K={FITTING_K_TABLE[name]:g})", min_value=0, value=1, step=1, key=f"{key_prefix}_fit_{i}_{name}")
-                if name in FITTING_K_DISCREPANCIES:
-                    st.caption(f"⚠ {FITTING_K_DISCREPANCIES[name]}")
+            with st.expander("Piezas especiales · cantidades en este tramo"):
+                st.caption("Usa − y + para indicar la cantidad de cada pieza. K es un coeficiente genérico; no depende del fabricante ni del diámetro en esta tabla.")
+                fitting_columns = st.columns(2)
+                for j, (name, k) in enumerate(FITTING_K_TABLE.items()):
+                    count = fitting_columns[j % 2].number_input(f"{name} · K={k:g}", min_value=0, value=0, step=1, key=f"{key_prefix}_fit_{i}_{name}")
+                    if count:
+                        fitting_counts[name] = count
+                        if name in FITTING_K_DISCREPANCIES:
+                            st.caption(FITTING_K_DISCREPANCIES[name])
+            st.caption(f"Total de piezas: {sum(fitting_counts.values())} · ΣK = {sum(FITTING_K_TABLE[n]*c for n,c in fitting_counts.items()):.2f}")
             segments.append(PipeSegment(label=f"Tramo {i + 1}", length_m=length, inside_diameter_mm=di, roughness_mm=roughness, fitting_counts=fitting_counts))
             total_length += length
     if n_segments > 1:
@@ -417,9 +443,15 @@ def _render_scenarios_section(key_prefix: str) -> list[dict]:
     scenarios = [{"label": "Nominal", "phi": 1.0, "parallel_n": 1, "series_n": 1}]
     n_extra = st.number_input("Escenarios VDF adicionales", min_value=0, max_value=5, value=0, key=f"{key_prefix}_n_scenarios")
     nominal_rpm = st.number_input("Velocidad nominal (rpm)", min_value=1.0, value=2900.0, key=f"{key_prefix}_rpm_nominal") if n_extra else None
+    action_a, action_b = st.columns(2)
+    def change_count(delta):
+        st.session_state[f"{key_prefix}_n_scenarios"] = int(st.session_state[f"{key_prefix}_n_scenarios"]) + delta
+    action_a.button("+ Añadir escenario", key=f"{key_prefix}_add_scenario", disabled=n_extra >= 5, on_click=change_count, args=(1,))
+    action_b.button("− Quitar último", key=f"{key_prefix}_remove_scenario", disabled=n_extra == 0, on_click=change_count, args=(-1,))
     for i in range(int(n_extra)):
         rpm = st.number_input(f"Velocidad escenario {i + 1} (rpm)", min_value=1.0, value=2900.0 - (i + 1) * 300, key=f"{key_prefix}_rpm_{i}")
-        scenarios.append({"label": f"{rpm:g} rpm", "phi": rpm / nominal_rpm, "parallel_n": 1, "series_n": 1})
+        st.caption(f"Relación de velocidad: {rpm / nominal_rpm:.3f} × nominal")
+        scenarios.append({"label": f"VDF {i+1} · {rpm:g} rpm", "phi": rpm / nominal_rpm, "parallel_n": 1, "series_n": 1})
 
     col1, col2 = st.columns(2)
     n_parallel = col1.number_input("N bombas identicas en paralelo (aplica a todos los escenarios)", min_value=1, value=1, key=f"{key_prefix}_n_parallel")
@@ -750,3 +782,32 @@ def _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree):
         st.caption("Golpe de ariete simplificado: a (m/s), Kf módulo volumétrico del fluido (Pa), E módulo elástico de tubería (Pa), e espesor (m), t tiempo de cierre (s). Se usa restricción 1 y Kf de agua = 2,15×10⁹ Pa. La altura pico mostrada es H nominal + ΔH; no es una simulación transitoria de toda la red.")
         st.latex(r"\phi=N/N_0,\quad Q'=\phi Q,\quad H'=\phi^2H,\quad P'=\phi^3P")
         st.caption("Afinidad para cambio de velocidad N. Bombas idénticas: en paralelo se suman caudales a igual H; en serie se suman alturas a igual Q. La eficiencia de cada punto se traslada con la curva; una eficiencia constante sigue siendo un supuesto.")
+
+
+def _render_energy_profile(segments, fluid, nominal, static_head_m):
+    with st.expander("Perfil de energía y presión · ilustrativo", expanded=True):
+        st.caption("Bomba al inicio, origen de cotas en el depósito de succión. Se supone una pendiente uniforme y se reparten las pérdidas de cada tramo a lo largo de su longitud. No hay cotas de terreno ni ubicación real de accesorios: este perfil no verifica presiones de diseño.")
+        if not nominal:
+            st.info("Se necesita un punto de operación nominal para dibujar el perfil.")
+            return
+        rows = illustrative_profile(segments, nominal['Q (L/s)']/1000, nominal['H (m)'], static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
+        fig = go.Figure()
+        for field, label, color, dash, axis in [
+            ('energia_m', 'Energía total (m)', '#526578', 'dot', 'y'),
+            ('piezometrica_m', 'Cota piezométrica (m)', '#155A8A', 'solid', 'y'),
+            ('cota_m', 'Cota supuesta de tubería (m)', '#777777', 'solid', 'y'),
+            ('presion_bar', 'Presión relativa (bar)', '#0599A5', 'dash', 'y2')]:
+            fig.add_trace(go.Scatter(x=[r['distancia_m'] for r in rows], y=[r[field] for r in rows], name=label, mode='lines', line=dict(color=color, dash=dash), yaxis=axis))
+        for row in rows[1:-1:2]:
+            fig.add_vline(x=row['distancia_m'], line_dash='dot', line_color='#cccccc')
+        fig.update_layout(template='plotly_white', height=420, font=dict(family='Times New Roman, Times, serif', size=16),
+                          xaxis_title='Distancia desde la bomba (m)', yaxis_title='Cota / energía (m)',
+                          yaxis2=dict(title='Presión relativa (bar)', overlaying='y', side='right'),
+                          legend=dict(orientation='h', y=-0.25), margin=dict(t=20, b=100))
+        st.plotly_chart(fig, use_container_width=True, key='pump_energy_profile', config={'displaylogo': False, 'toImageButtonOptions': {'format':st.session_state.get('pump_chart_format','png'), 'filename':'BESB_Piping_perfil', 'width':1600,'height':1000,'scale':2}})
+        st.latex(r"E(x)=H_b-\sum h_{\mathrm{pérdidas}},\quad H_p=E-v^2/(2g),\quad p=\rho g(H_p-z)/10^5\;[bar]")
+        st.caption("Los cambios de diámetro producen saltos de cota piezométrica por el cambio de velocidad. Las pérdidas de reductores deben ingresarse como accesorios. No se fuerza el extremo del gráfico a presión cero.")
+        if any(r['presion_bar'] < 0 for r in rows):
+            st.warning("El perfil supuesto presenta presión relativa negativa. Revisa cotas, condiciones de borde y pérdidas con un modelo detallado antes de interpretar el resultado.")
+        if st.checkbox("Ver valores del perfil por tramo", key='pump_profile_table'):
+            st.dataframe(rows, hide_index=True, use_container_width=True)
