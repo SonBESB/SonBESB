@@ -54,3 +54,34 @@ table.results-table th:first-child, table.results-table td:first-child { text-al
 .error-box { color: var(--danger); font-size: 12px; white-space: pre-wrap; }
 
 .app-footer { padding: 8px 20px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); background: var(--panel-bg); }
+
+/* --- catalogo --- */
+.catalog-box { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 8px 0; background: var(--bg); }
+.catalog-summary { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* --- mini diagramas en resultados --- */
+.diagram-block { margin-bottom: 10px; }
+.diagram-block h4 { margin: 0 0 4px; font-size: 11px; color: var(--muted); font-weight: 500; }
+.diagram-block canvas { width: 100%; height: 60px; background: #06080a; border: 1px solid var(--border); border-radius: 4px; }
+
+/* --- memoria de calculo --- */
+.memoria-overlay { position: fixed; inset: 0; background: #ffffff; color: #111; z-index: 50; overflow-y: auto; }
+.memoria-toolbar { position: sticky; top: 0; display: flex; gap: 10px; align-items: center; padding: 10px 20px; background: #161b22; border-bottom: 1px solid #2a313c; }
+.memoria-toolbar .muted { color: #9aa4b2; }
+.memoria-content { max-width: 900px; margin: 0 auto; padding: 30px 40px 60px; font-family: Georgia, 'Times New Roman', serif; }
+.memoria-content h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 8px; }
+.memoria-content h2 { font-size: 16px; margin-top: 28px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+.memoria-content table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+.memoria-content th, .memoria-content td { border: 1px solid #999; padding: 4px 8px; text-align: right; }
+.memoria-content th:first-child, .memoria-content td:first-child { text-align: left; }
+.memoria-content .meta-table td { text-align: left; }
+.memoria-content .note { font-size: 12px; color: #555; font-style: italic; }
+.memoria-content canvas { border: 1px solid #ccc; background: #fff !important; }
+.memoria-field { margin: 4px 0; }
+.memoria-field input { font-family: inherit; font-size: 13px; border: 1px solid #ccc; padding: 3px 6px; border-radius: 3px; }
+
+@media print {
+  .no-print { display: none !important; }
+  .memoria-overlay { position: static; overflow: visible; }
+  body > *:not(.memoria-overlay) { display: none !important; }
+}

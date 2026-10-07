@@ -36,22 +36,46 @@ depender de que `cdn.jsdelivr.net` o similar esté disponible.
 2. Pestaña **Barras**: agrega barras conectando dos nodos existentes.
    Selecciona una barra en la tabla para editar en el panel de abajo:
    material (E, G — con atajos Acero/Hormigón/Aluminio), sección
-   (rectangular o circular sólida), carga distribuida uniforme (UDLy,
-   UDLz, kN/m) y el ángulo β de rotación de la sección alrededor de su
-   propio eje.
+   (rectangular, circular sólida, o **catálogo de perfiles** — ver abajo),
+   carga distribuida uniforme (UDLy, UDLz, kN/m) y el ángulo β de rotación
+   de la sección alrededor de su propio eje.
 3. Pestaña **Cargas**: cargas puntuales por nodo (Fx,Fy,Fz en kN;
    Mx,My,Mz en kN·m).
 4. **Calcular**: resuelve el modelo. Pestaña **Resultados**: reacciones,
-   máximos por barra, von Mises máximo global con ubicación, y el corte
-   de torsión máximo aproximado por barra (ver limitaciones).
+   máximos por barra, **diagramas N/Vy/Vz/T/My/Mz(x) por barra**, von Mises
+   máximo global con ubicación, y el corte de torsión máximo aproximado
+   por barra (ver limitaciones).
 5. En el visor 3D: arrastrar rota la cámara, rueda hace zoom, shift+arrastrar
    desplaza (pan). "Ajustar vista" reencuadra a los nodos actuales.
    La forma deformada se dibuja coloreada por von Mises (azul=bajo,
    rojo=alto), con escala automática (o manual, campo "Escala deformada").
+6. **Memoria de cálculo**: tras calcular, abre una vista imprimible con
+   el modelo, metodología y resultados completos — ver sección propia
+   abajo.
 
 El modelo carga con un ejemplo pequeño (pórtico en L, empotrado, con carga
 en el extremo) para que el visor no arranque vacío — bórralo con
 "Limpiar todo" para empezar de cero.
+
+## Catálogo de perfiles
+
+Mismos datos y misma procedencia que el módulo 2D (`data/catalog_icha.json`,
+429 perfiles reales extraídos y verificados desde un archivo ICHA que subió
+el usuario del proyecto — ver el README de `structural/` para el detalle
+de la validación y las 12 filas excluidas por inconsistencia).
+
+**Mapeo de ejes (importante):** el eje fuerte del catálogo (x-x) siempre
+se asigna a **Iy** del modelo 3D (resiste la flexión vertical típica bajo
+carga de gravedad), y el eje débil (y-y) a **Iz**. No hay opción de
+invertir esto desde el selector — si necesitas "acostar" el perfil, usa
+el ángulo β del elemento. Ver el comentario de cabecera de `js/catalog.js`
+para la justificación completa de este mapeo (está directamente ligado a
+la convención de ejes locales verificada en `tests/validation.js`).
+
+La constante de torsión J se calcula con la misma aproximación de
+Saint-Venant que el módulo 2D (no es un valor de catálogo). **CINTAC no
+está incluido** (ver README de `structural/` — ese archivo solo trae
+dimensiones, no propiedades de sección calculadas).
 
 ## Convención de unidades
 
@@ -134,12 +158,24 @@ por analogía directa la fórmula del eje "gemelo" (z→y) casi nunca es
 seguro por la asimetría del sistema right-handed; cada bloque se verificó
 por separado contra un caso físico independiente antes de confiar en él.
 
+## Memoria de cálculo
+
+Igual enfoque que el módulo 2D: vista HTML imprimible (no PDF de backend),
+con datos de proyecto editables, descripción del modelo, metodología,
+resultados (reacciones, máximos y diagramas N/Vy/Vz/T/My/Mz por barra,
+von Mises, nota de torsión en rectangulares) y verificación si se
+especificó tensión admisible. Usa Ctrl/Cmd+P o el botón "Imprimir /
+Guardar PDF" — **ese botón no funciona si estás viendo esto como Artifact**
+(`window.print()` deshabilitado ahí); corre desde el repo para imprimir.
+
 ## Estructura de archivos
 
 ```
 structural3d/
   index.html
   css/style.css
+  data/
+    catalog_icha.json, catalog_icha_excluidos.json  (compartido con structural/, ver ese README)
   js/
     units.js            conversion UI <-> interno (igual patron que 2D)
     model.js             Node, Element, Section (3D), Model, tabla Roark
@@ -148,7 +184,9 @@ structural3d/
     solver.js               ensamblaje, condiciones de borde, N/Vy/Vz/T/My/Mz, deflexion
     stress.js                sigma biaxial, corte Jourawski por eje, torsion, von Mises
     render3d.js               escena Three.js, geometria, forma deformada coloreada
-    app.js                     tablas de nodos/barras/cargas, estado, resultados
+    catalog.js                 carga/consulta del catalogo de perfiles (mapeo de ejes 3D)
+    memoria.js                 genera el HTML de la memoria de calculo imprimible
+    app.js                     tablas de nodos/barras/cargas, estado, resultados, diagramas
     vendor/three.min.js, vendor/OrbitControls.js   (vendorizados, sin CDN)
   tests/
     validation.js            suite de validacion (node structural3d/tests/validation.js)

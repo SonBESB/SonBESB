@@ -41,6 +41,8 @@
   function invalidateResults() {
     state.lastResult = null;
     document.getElementById('resultsContent').innerHTML = '<p class="muted">Presiona "Calcular" para resolver el modelo.</p>';
+    var btn = document.getElementById('memoriaBtn');
+    if (btn) btn.disabled = true;
   }
 
   function render3D() {
@@ -183,6 +185,52 @@
     renderAll();
   });
 
+  function renderCatalogFields3D(el) {
+    if (!FEM3D.Catalog.loaded) {
+      var msg = FEM3D.Catalog.error
+        ? 'No se pudo cargar el catálogo (' + FEM3D.Catalog.error + '). Si abriste el archivo con file://, corre un servidor local (ver README).'
+        : 'Cargando catálogo…';
+      return '<p class="muted">' + msg + '</p>';
+    }
+    var families = FEM3D.Catalog.families();
+    var currentFamily = (el.catalogRef && el.catalogRef.family) || (families[0] && families[0].family);
+    var familyOptions = families.map(function (f) {
+      return '<option value="' + f.family + '"' + (f.family === currentFamily ? ' selected' : '') + '>' + f.label + ' (' + f.family + ')</option>';
+    }).join('');
+    return '<label>Familia<select id="ee_catfamily">' + familyOptions + '</select></label>' +
+      '<label>Perfil<select id="ee_catprofile"></select></label>' +
+      '<div id="ee_catalogSummary" class="catalog-summary"></div>' +
+      '<p class="muted">El eje fuerte del catálogo (x-x) siempre se orienta como Iy (resiste flexión vertical). Para "acostar" el perfil, usa el ángulo β.</p>';
+  }
+
+  function wireCatalogFields3D(el) {
+    if (!FEM3D.Catalog.loaded) return;
+    var familySelect = document.getElementById('ee_catfamily');
+    var profileSelect = document.getElementById('ee_catprofile');
+    var summary = document.getElementById('ee_catalogSummary');
+
+    function populateProfiles() {
+      var profiles = FEM3D.Catalog.byFamily(familySelect.value);
+      var currentId = el.catalogRef && el.catalogRef.id;
+      profileSelect.innerHTML = profiles.map(function (p) {
+        return '<option value="' + p.id + '"' + (p.id === currentId ? ' selected' : '') + '>' +
+          p.id + ' (' + p.weight_kg_m + ' kg/m)</option>';
+      }).join('');
+      updateSummary();
+    }
+    function updateSummary() {
+      var profile = FEM3D.Catalog.findById(profileSelect.value);
+      if (!profile) { summary.textContent = ''; return; }
+      var sp = FEM3D.Catalog.toSectionParams(profile);
+      summary.textContent = 'A=' + sp.A.toFixed(0) + ' mm², Iy=' + sp.Iy.toExponential(3) +
+        ' mm⁴, Iz=' + sp.Iz.toExponential(3) + ' mm⁴, J≈' + sp.J.toExponential(3) +
+        ' mm⁴ — fuente: ICHA (archivo subido por el usuario)';
+    }
+    familySelect.addEventListener('change', populateProfiles);
+    profileSelect.addEventListener('change', updateSummary);
+    populateProfiles();
+  }
+
   function renderElementEdit() {
     var container = document.getElementById('elementEdit');
     var el = state.model.elements.find(function (e) { return e.id === state.selectedElementId; });
@@ -207,6 +255,7 @@
       '<label>Sección<select id="ee_sectype">' +
       '<option value="rect"' + (el.section.type === 'rect' ? ' selected' : '') + '>Rectangular</option>' +
       '<option value="circle"' + (el.section.type === 'circle' ? ' selected' : '') + '>Circular sólida</option>' +
+      '<option value="catalog"' + (el.section.type === 'manual' && el.catalogRef ? ' selected' : '') + '>Catálogo de perfiles</option>' +
       '</select></label>' +
       '<div id="ee_sectionFields"></div>' +
       '<div style="display:flex;gap:6px">' +
@@ -223,12 +272,15 @@
           '<label style="flex:1">b -y- (mm)<input type="number" id="ee_b" value="' + (p.b || 200) + '"></label>' +
           '<label style="flex:1">h -z- (mm)<input type="number" id="ee_h" value="' + (p.h || 400) + '"></label>' +
           '</div>';
-      } else {
+      } else if (type === 'circle') {
         html = '<label>d (mm)<input type="number" id="ee_d" value="' + (p.d || 300) + '"></label>';
+      } else {
+        html = renderCatalogFields3D(el);
       }
       document.getElementById('ee_sectionFields').innerHTML = html;
+      if (type === 'catalog') wireCatalogFields3D(el);
     }
-    renderSectionFields(el.section.type);
+    renderSectionFields(el.section.type === 'manual' && el.catalogRef ? 'catalog' : el.section.type);
     document.getElementById('ee_sectype').addEventListener('change', function (evt) { renderSectionFields(evt.target.value); });
     container.querySelectorAll('[data-preset]').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -251,8 +303,17 @@
           b: parseFloat(document.getElementById('ee_b').value) || 1,
           h: parseFloat(document.getElementById('ee_h').value) || 1
         });
-      } else {
+        el.catalogRef = null;
+      } else if (type === 'circle') {
         el.section = new FEM3D.Section('circle', { d: parseFloat(document.getElementById('ee_d').value) || 1 });
+        el.catalogRef = null;
+      } else if (type === 'catalog') {
+        var profileId = document.getElementById('ee_catprofile').value;
+        var profile = FEM3D.Catalog.findById(profileId);
+        if (profile) {
+          el.section = new FEM3D.Section('manual', FEM3D.Catalog.toSectionParams(profile));
+          el.catalogRef = { id: profile.id, family: profile.family, label: profile.familyLabel };
+        }
       }
       el.udlY = Units.distributedLoadToInternal(parseFloat(document.getElementById('ee_udlY').value) || 0);
       el.udlZ = Units.distributedLoadToInternal(parseFloat(document.getElementById('ee_udlZ').value) || 0);
@@ -356,6 +417,7 @@
     });
 
     state.lastResult = { result: result, stressGrids: stressGrids, globalMax: globalMax, vmLocation: vmLocation, torsionMaxByElement: torsionMaxByElement };
+    document.getElementById('memoriaBtn').disabled = false;
     renderResultsPanel();
     render3D();
   }
@@ -393,6 +455,14 @@
     });
     html += '</table>';
 
+    html += '<h3 style="font-size:12px;color:var(--muted)">Diagramas por barra</h3>';
+    state.model.elements.forEach(function (el) {
+      ['N', 'Vy', 'Vz', 'T', 'My', 'Mz'].forEach(function (k) {
+        html += '<div class="diagram-block"><h4>Barra #' + el.id + ' — ' + k + '(x)</h4>' +
+          '<canvas id="diag' + k + '_' + el.id + '"></canvas></div>';
+      });
+    });
+
     html += '<h3 style="font-size:12px;color:var(--muted)">Von Mises máximo global</h3>';
     html += '<p>' + lr.globalMax.vonMises.toFixed(2) + ' MPa';
     if (lr.vmLocation) {
@@ -421,13 +491,132 @@
     }
 
     document.getElementById('resultsContent').innerHTML = html;
+
+    var FORCE_KEYS = { N: true, Vy: true, Vz: true };
+    var COLORS = { N: '#ff4fd2', Vy: '#4fb8ff', Vz: '#7fd4ff', T: '#ffb84f', My: '#4fd27a', Mz: '#7fe39a' };
+    state.model.elements.forEach(function (el) {
+      var ef = lr.result.elementForces.get(el.id);
+      var nx = 40;
+      var series = { N: [], Vy: [], Vz: [], T: [], My: [], Mz: [] };
+      for (var i = 0; i <= nx; i++) {
+        var f = FEM3D.solver.internalForcesAt(ef, (ef.L * i) / nx);
+        Object.keys(series).forEach(function (k) {
+          series[k].push(FORCE_KEYS[k] ? Units.forceToUi(f[k]) : Units.momentToUi(f[k]));
+        });
+      }
+      Object.keys(series).forEach(function (k) {
+        var canvas = document.getElementById('diag' + k + '_' + el.id);
+        drawMiniDiagram(canvas, series[k], COLORS[k], FORCE_KEYS[k] ? 'kN' : 'kN·m');
+      });
+    });
   }
+
+  /** Mini-diagrama de area en un <canvas>: linea base en 0, relleno hasta la curva. */
+  function drawMiniDiagram(canvas, values, color, unit, theme) {
+    if (!canvas) return;
+    theme = theme || { grid: '#3a414c', text: '#c8ccd2' };
+    // Resolucion interna fija (independiente del layout: la pestaña
+    // Resultados puede estar display:none cuando se dibuja, lo que daria
+    // 0x0 con getBoundingClientRect). Se escala visualmente via CSS.
+    var w = 360, h = 60;
+    canvas.width = w; canvas.height = h;
+    var c = canvas.getContext('2d');
+    c.clearRect(0, 0, w, h);
+
+    var maxAbs = 0;
+    values.forEach(function (v) { maxAbs = Math.max(maxAbs, Math.abs(v)); });
+    var padL = 4, padR = 4, padT = 10, padB = 4;
+    var plotW = w - padL - padR, plotH = h - padT - padB;
+    var zeroY = padT + plotH / 2;
+    var scale = maxAbs > 1e-9 ? (plotH / 2 - 2) / maxAbs : 0;
+
+    c.strokeStyle = theme.grid; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(padL, zeroY); c.lineTo(w - padR, zeroY); c.stroke();
+
+    c.beginPath();
+    c.moveTo(padL, zeroY);
+    values.forEach(function (v, i) {
+      var x = padL + (plotW * i) / (values.length - 1);
+      c.lineTo(x, zeroY - v * scale);
+    });
+    c.lineTo(w - padR, zeroY);
+    c.closePath();
+    c.fillStyle = color + '33';
+    c.fill();
+    c.strokeStyle = color; c.lineWidth = 1.5;
+    c.beginPath();
+    values.forEach(function (v, i) {
+      var x = padL + (plotW * i) / (values.length - 1);
+      var y = zeroY - v * scale;
+      if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+    });
+    c.stroke();
+
+    c.fillStyle = theme.text; c.font = '10px sans-serif'; c.textAlign = 'right';
+    c.fillText('máx |' + maxAbs.toFixed(2) + '| ' + unit, w - padR, padT - 1);
+  }
+
   document.getElementById('allowableStress').addEventListener('input', function () {
     if (state.lastResult) renderResultsPanel();
   });
 
   document.getElementById('fitBtn').addEventListener('click', function () {
     FEM3DRender.fitView(state.ctx, state.model.nodes);
+  });
+
+  // ---------------------------------------------------------------
+  // Memoria de calculo
+  // ---------------------------------------------------------------
+
+  var memoriaMeta = { proyecto: '', autor: '', notas: '' };
+  var memoriaOverlay = document.getElementById('memoriaOverlay');
+
+  function renderMemoria() {
+    var allowable = parseFloat(document.getElementById('allowableStress').value) || 0;
+    var fecha = new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
+    var result = FEM3D.Memoria.generate({
+      model: state.model, lastResult: state.lastResult,
+      meta: { proyecto: memoriaMeta.proyecto, autor: memoriaMeta.autor, fecha: fecha, notas: memoriaMeta.notas },
+      allowableStress: allowable
+    });
+
+    var formHtml = '<div class="no-print" style="background:#f0f0f0;border:1px solid #ccc;border-radius:6px;padding:10px;margin-bottom:16px">' +
+      '<div class="memoria-field"><label>Proyecto: <input type="text" id="mem_proyecto" value="' +
+      (memoriaMeta.proyecto || '').replace(/"/g, '&quot;') + '" style="width:300px"></label></div>' +
+      '<div class="memoria-field"><label>Autor: <input type="text" id="mem_autor" value="' +
+      (memoriaMeta.autor || '').replace(/"/g, '&quot;') + '" style="width:300px"></label></div>' +
+      '<div class="memoria-field"><label>Notas: <input type="text" id="mem_notas" value="' +
+      (memoriaMeta.notas || '').replace(/"/g, '&quot;') + '" style="width:500px"></label></div>' +
+      '</div>';
+
+    document.getElementById('memoriaContent').innerHTML = formHtml + result.html;
+
+    result.diagrams.forEach(function (d) {
+      drawMiniDiagram(document.getElementById(d.canvasId), d.points, d.color, d.unit, { grid: '#ccc', text: '#444' });
+    });
+
+    ['mem_proyecto', 'mem_autor', 'mem_notas'].forEach(function (id) {
+      var key = id.replace('mem_', '');
+      document.getElementById(id).addEventListener('input', function (evt) {
+        memoriaMeta[key] = evt.target.value;
+        var display = document.getElementById('mem_display_' + key);
+        if (display) {
+          display.textContent = evt.target.value || (key === 'notas' ? '' : '(sin especificar)');
+          if (key === 'notas') display.hidden = !evt.target.value;
+        }
+      });
+    });
+  }
+
+  document.getElementById('memoriaBtn').addEventListener('click', function () {
+    renderMemoria();
+    memoriaOverlay.hidden = false;
+  });
+  document.getElementById('memoriaCloseBtn').addEventListener('click', function () {
+    memoriaOverlay.hidden = true;
+  });
+  document.getElementById('memoriaPrintBtn').addEventListener('click', function () {
+    window.print();
   });
 
   document.getElementById('clearBtn').addEventListener('click', function () {
@@ -463,4 +652,10 @@
 
   renderAll();
   FEM3DRender.fitView(state.ctx, state.model.nodes);
+
+  FEM3D.Catalog.load().then(function () {
+    if (state.selectedElementId != null) renderElementEdit();
+  }).catch(function () {
+    if (state.selectedElementId != null) renderElementEdit();
+  });
 })();

@@ -52,6 +52,55 @@ Rueda del mouse = zoom centrado en el cursor. "Ajustar vista" reencuadra
 la vista a los nodos actuales (la vista no se reajusta sola en cada clic,
 para que no "salte" mientras se dibuja).
 
+## Catálogo de perfiles
+
+En el tipo de sección de una barra, además de Rectangular/Circular/Manual
+hay una opción **Catálogo de perfiles**: elige una familia (IN, HN, IP,
+PH, T, CA, C) y un perfil, y se autocompletan A, I y c (fibra extrema)
+reales — con la opción de usar el eje fuerte (x-x, por defecto) o el
+débil (y-y) del perfil, según cómo lo vayas a orientar.
+
+**Origen de los datos** (`data/catalog_icha.json`, 429 perfiles): extraídos
+y verificados desde un archivo ICHA real que subió el usuario del proyecto
+(`Serie IN/HN/IP/PH/T/CA/C (Diseño)`), **no inventados**. Cada fila pasó
+dos chequeos de consistencia física antes de incluirse: fibra extrema
+c=I/W contra la geometría publicada, y Área×densidad del acero (7850 kg/m³)
+contra el peso por metro catalogado. De 442 filas originales, **12 se
+excluyeron** por errores de transcripción reales detectados en el archivo
+fuente (ver `data/catalog_icha_excluidos.json` para la lista, con el motivo
+de cada exclusión, por si quieres revisarlas contra tu copia impresa).
+
+La constante de torsión J para estos perfiles (soldados/plegados, secciones
+abiertas) **no viene en el catálogo ICHA** — se calcula aquí con la
+aproximación estándar de Saint-Venant para secciones de pared delgada
+(J≈Σbᵢtᵢ³/3), no es un valor de catálogo.
+
+**CINTAC no está incluido.** El archivo CINTAC que se subió es una
+biblioteca de *dimensiones* para Autodesk Inventor (perfiles conformados
+en frío: costaneras, tubos, cajones, etc.) — no trae A, I ni W calculados,
+solo geometría. Incorporarlo requeriría calcular las propiedades de
+sección desde cero para ~13 familias de perfiles distintas (fórmulas de
+pared delgada por familia), que no se hizo en esta pasada.
+
+Si abres `index.html` directamente con `file://`, el catálogo no cargará
+(los navegadores bloquean `fetch()` de JSON local sin servidor) — corre
+un servidor local como se indica arriba.
+
+## Memoria de cálculo
+
+Tras "Calcular", el botón "Memoria de cálculo" abre una vista imprimible
+con: datos de proyecto (editables: nombre, autor, notas), descripción del
+modelo (nodos, barras con su sección/material, cargas), un resumen breve
+de la metodología, resultados (reacciones, máximos por barra con sus
+diagramas M(x)/V(x), von Mises máximo con ubicación) y la verificación
+contra la tensión admisible si se especificó una.
+
+Usa Ctrl/Cmd+P o el botón "Imprimir / Guardar PDF" para exportar. **Si
+estás viendo la app como un Artifact de Claude, ese botón no va a
+funcionar** — `window.print()` está deshabilitado en ese entorno por
+diseño. Para imprimir/exportar PDF, corre la app desde el repo (ver
+"Cómo correr" arriba) en un navegador normal.
+
 ## Convención de unidades
 
 | Cantidad | UI (lo que ves/tipeas) | Interno (solver) |
@@ -156,7 +205,12 @@ structural/
     solver.js                ensamblaje, condiciones de borde, fuerzas internas, deflexion
     stress.js                tension normal/corte/von Mises (Jourawski)
     render.js                vista (pan/zoom), dibujo de modelo y overlays de resultados
+    catalog.js                carga/consulta del catalogo de perfiles (data/catalog_icha.json)
+    memoria.js                genera el HTML de la memoria de calculo imprimible
     app.js                   estado de UI, interaccion, panel de propiedades/resultados
+  data/
+    catalog_icha.json         429 perfiles reales verificados (ver seccion "Catalogo de perfiles")
+    catalog_icha_excluidos.json  filas descartadas por inconsistencia, con el motivo
   tests/
     validation.js            suite de validacion (node structural/tests/validation.js)
 ```

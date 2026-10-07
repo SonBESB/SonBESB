@@ -77,6 +77,8 @@
   function invalidateResults() {
     state.lastResult = null;
     renderResultsPlaceholder();
+    var btn = document.getElementById('memoriaBtn');
+    if (btn) btn.disabled = true;
   }
 
   function renderResultsPlaceholder() {
@@ -257,6 +259,62 @@
     ];
   }
 
+  // ---------------------------------------------------------------
+  // Catalogo de perfiles (ver js/catalog.js)
+  // ---------------------------------------------------------------
+
+  function renderCatalogFields(el) {
+    if (!FEM.Catalog.loaded) {
+      var msg = FEM.Catalog.error
+        ? 'No se pudo cargar el catálogo (' + FEM.Catalog.error + '). Si abriste el archivo directamente ' +
+          '(file://), corre un servidor local (ver README) — los navegadores bloquean fetch() de JSON local sin servidor.'
+        : 'Cargando catálogo…';
+      return '<p class="muted">' + msg + '</p>';
+    }
+    var families = FEM.Catalog.families();
+    var currentFamily = (el.catalogRef && el.catalogRef.family) || (families[0] && families[0].family);
+    var familyOptions = families.map(function (f) {
+      return '<option value="' + f.family + '"' + (f.family === currentFamily ? ' selected' : '') + '>' + f.label + ' (' + f.family + ')</option>';
+    }).join('');
+    return '<label>Familia<select id="f_catfamily">' + familyOptions + '</select></label>' +
+      '<label>Perfil<select id="f_catprofile"></select></label>' +
+      '<label>Eje a usar' +
+      '<select id="f_cataxis">' +
+      '<option value="strong"' + (!el.catalogRef || el.catalogRef.axis !== 'weak' ? ' selected' : '') + '>Fuerte (x-x) — uso típico en vigas/columnas</option>' +
+      '<option value="weak"' + (el.catalogRef && el.catalogRef.axis === 'weak' ? ' selected' : '') + '>Débil (y-y)</option>' +
+      '</select></label>' +
+      '<div id="catalogSummary" class="catalog-summary"></div>';
+  }
+
+  function wireCatalogFields(el) {
+    if (!FEM.Catalog.loaded) return;
+    var familySelect = document.getElementById('f_catfamily');
+    var profileSelect = document.getElementById('f_catprofile');
+    var axisSelect = document.getElementById('f_cataxis');
+    var summary = document.getElementById('catalogSummary');
+
+    function populateProfiles() {
+      var profiles = FEM.Catalog.byFamily(familySelect.value);
+      var currentId = el.catalogRef && el.catalogRef.id;
+      profileSelect.innerHTML = profiles.map(function (p) {
+        return '<option value="' + p.id + '"' + (p.id === currentId ? ' selected' : '') + '>' +
+          p.id + ' (' + p.weight_kg_m + ' kg/m)</option>';
+      }).join('');
+      updateSummary();
+    }
+    function updateSummary() {
+      var profile = FEM.Catalog.findById(profileSelect.value);
+      if (!profile) { summary.textContent = ''; return; }
+      var sp = FEM.Catalog.toSectionParams(profile, axisSelect.value);
+      summary.textContent = 'A=' + sp.A.toFixed(0) + ' mm², I=' + sp.I.toExponential(3) +
+        ' mm⁴, c=' + sp.c.toFixed(1) + ' mm — fuente: ICHA (archivo subido por el usuario, ver data/catalog_icha.json)';
+    }
+    familySelect.addEventListener('change', populateProfiles);
+    profileSelect.addEventListener('change', updateSummary);
+    axisSelect.addEventListener('change', updateSummary);
+    populateProfiles();
+  }
+
   function updatePropsPanel() {
     if (!state.selection) {
       propsPanel.innerHTML = '<h2>Propiedades</h2><p class="muted">Selecciona un nodo o una barra para editarlo.</p>';
@@ -338,6 +396,7 @@
         '<option value="rect"' + (secType === 'rect' ? ' selected' : '') + '>Rectangular</option>' +
         '<option value="circle"' + (secType === 'circle' ? ' selected' : '') + '>Circular sólida</option>' +
         '<option value="manual"' + (secType === 'manual' ? ' selected' : '') + '>Manual (A, I, c)</option>' +
+        '<option value="catalog"' + (secType === 'manual' && el.catalogRef ? ' selected' : '') + '>Catálogo de perfiles</option>' +
         '</select></label>' +
         '<div id="sectionFields"></div>' +
         '<label>Carga distribuida uniforme w (kN/m)<br>' +
@@ -355,16 +414,19 @@
             '</div>';
         } else if (type === 'circle') {
           html = '<label>d (mm)<input type="number" id="f_d" value="' + (p.d || 300) + '"></label>';
-        } else {
+        } else if (type === 'manual') {
           html = '<div class="field-row">' +
             '<div><label>A (mm²)<input type="number" id="f_A" value="' + (p.A || 10000) + '"></label></div>' +
             '<div><label>I (mm⁴)<input type="number" id="f_I" value="' + (p.I || 1e8) + '"></label></div>' +
             '</div><label>c, distancia a fibra extrema (mm)<input type="number" id="f_c" value="' + (p.c || 100) + '"></label>' +
             '<p class="muted">Sección manual: no hay geometría real para calcular corte (τ); el mapa von Mises usará solo flexión+axial.</p>';
+        } else if (type === 'catalog') {
+          html = renderCatalogFields(el);
         }
         document.getElementById('sectionFields').innerHTML = html;
+        if (type === 'catalog') wireCatalogFields(el);
       }
-      renderSectionFields(secType);
+      renderSectionFields(secType === 'manual' && el.catalogRef ? 'catalog' : secType);
       document.getElementById('f_sectype').addEventListener('change', function (evt) {
         renderSectionFields(evt.target.value);
       });
@@ -381,14 +443,26 @@
             b: parseFloat(document.getElementById('f_b').value) || 1,
             h: parseFloat(document.getElementById('f_h').value) || 1
           });
+          el.catalogRef = null;
         } else if (type === 'circle') {
           el.section = new FEM.Section('circle', { d: parseFloat(document.getElementById('f_d').value) || 1 });
+          el.catalogRef = null;
+        } else if (type === 'catalog') {
+          var profileId = document.getElementById('f_catprofile').value;
+          var axis = document.getElementById('f_cataxis').value;
+          var profile = FEM.Catalog.findById(profileId);
+          if (profile) {
+            var sp = FEM.Catalog.toSectionParams(profile, axis);
+            el.section = new FEM.Section('manual', sp);
+            el.catalogRef = { id: profile.id, family: profile.family, axis: axis, label: profile.familyLabel };
+          }
         } else {
           el.section = new FEM.Section('manual', {
             A: parseFloat(document.getElementById('f_A').value) || 1,
             I: parseFloat(document.getElementById('f_I').value) || 1,
             c: parseFloat(document.getElementById('f_c').value) || 1
           });
+          el.catalogRef = null;
         }
         el.udl = Units.distributedLoadToInternal(parseFloat(document.getElementById('f_udl').value) || 0);
         invalidateResults();
@@ -444,6 +518,7 @@
     });
 
     state.lastResult = { result: result, stressGrids: stressGrids, globalMax: globalMax, vmLocation: vmLocation };
+    document.getElementById('memoriaBtn').disabled = false;
     renderResultsPanel();
     render();
   }
@@ -482,6 +557,14 @@
     });
     html += '</table>';
 
+    html += '<h3 style="font-size:12px;color:#8b949e;margin:10px 0 4px">Diagramas por barra</h3>';
+    state.model.elements.forEach(function (el) {
+      html += '<div class="diagram-block"><h4>Barra #' + el.id + ' — Momento M(x)</h4>' +
+        '<canvas id="diagM_' + el.id + '"></canvas></div>' +
+        '<div class="diagram-block"><h4>Barra #' + el.id + ' — Corte V(x)</h4>' +
+        '<canvas id="diagV_' + el.id + '"></canvas></div>';
+    });
+
     html += '<h3 style="font-size:12px;color:#8b949e;margin:10px 0 4px">Von Mises máximo global</h3>';
     html += '<p>' + lr.globalMax.vonMises.toFixed(2) + ' MPa';
     if (lr.vmLocation) {
@@ -498,10 +581,130 @@
     }
 
     resultsPanel.innerHTML = html;
+
+    state.model.elements.forEach(function (el) {
+      var ef = lr.result.elementForces.get(el.id);
+      var pointsM = [], pointsV = [];
+      var nx = 40;
+      for (var i = 0; i <= nx; i++) {
+        var x = (ef.L * i) / nx;
+        var f = FEM.solver.internalForcesAt(ef, x);
+        pointsM.push(Units.momentToUi(f.M));
+        pointsV.push(Units.forceToUi(f.V));
+      }
+      drawMiniDiagram(document.getElementById('diagM_' + el.id), pointsM, '#4fd27a', 'kN·m');
+      drawMiniDiagram(document.getElementById('diagV_' + el.id), pointsV, '#4fb8ff', 'kN');
+    });
+  }
+
+  /**
+   * Mini-diagrama de area (M(x) o V(x)) en un <canvas>: linea de base en 0,
+   * relleno hasta la curva, con el valor maximo absoluto etiquetado.
+   */
+  function drawMiniDiagram(canvas, values, color, unit, theme) {
+    if (!canvas) return;
+    theme = theme || { grid: '#3a414c', text: '#c8ccd2' };
+    // Resolucion interna fija (independiente del layout/CSS, que puede dar
+    // 0 si el panel esta oculto en el momento de dibujar): el canvas se
+    // escala visualmente via CSS (width:100%) pero se dibuja siempre a
+    // esta resolucion.
+    var w = 360, h = 70;
+    canvas.width = w; canvas.height = h;
+    var c = canvas.getContext('2d');
+    c.clearRect(0, 0, w, h);
+
+    var maxAbs = 0;
+    values.forEach(function (v) { maxAbs = Math.max(maxAbs, Math.abs(v)); });
+    var padL = 4, padR = 4, padT = 10, padB = 4;
+    var plotW = w - padL - padR, plotH = h - padT - padB;
+    var zeroY = padT + plotH / 2;
+    var scale = maxAbs > 1e-9 ? (plotH / 2 - 2) / maxAbs : 0;
+
+    c.strokeStyle = theme.grid; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(padL, zeroY); c.lineTo(w - padR, zeroY); c.stroke();
+
+    c.beginPath();
+    c.moveTo(padL, zeroY);
+    values.forEach(function (v, i) {
+      var x = padL + (plotW * i) / (values.length - 1);
+      var y = zeroY - v * scale;
+      c.lineTo(x, y);
+    });
+    c.lineTo(w - padR, zeroY);
+    c.closePath();
+    c.fillStyle = color + '33';
+    c.fill();
+    c.strokeStyle = color; c.lineWidth = 1.5;
+    c.beginPath();
+    values.forEach(function (v, i) {
+      var x = padL + (plotW * i) / (values.length - 1);
+      var y = zeroY - v * scale;
+      if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+    });
+    c.stroke();
+
+    c.fillStyle = theme.text; c.font = '10px sans-serif'; c.textAlign = 'right';
+    c.fillText('máx |' + maxAbs.toFixed(2) + '| ' + unit, w - padR, padT - 1);
   }
 
   document.getElementById('allowableStress').addEventListener('input', function () {
     if (state.lastResult) renderResultsPanel();
+  });
+
+  // ---------------------------------------------------------------
+  // Memoria de calculo
+  // ---------------------------------------------------------------
+
+  var memoriaMeta = { proyecto: '', autor: '', notas: '' };
+  var memoriaOverlay = document.getElementById('memoriaOverlay');
+  var memoriaBtn = document.getElementById('memoriaBtn');
+
+  function renderMemoria() {
+    var allowable = parseFloat(document.getElementById('allowableStress').value) || 0;
+    var fecha = new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
+    var result = FEM.Memoria.generate({
+      model: state.model, lastResult: state.lastResult,
+      meta: { proyecto: memoriaMeta.proyecto, autor: memoriaMeta.autor, fecha: fecha, notas: memoriaMeta.notas },
+      allowableStress: allowable
+    });
+
+    var formHtml = '<div class="no-print" style="background:#f0f0f0;border:1px solid #ccc;border-radius:6px;padding:10px;margin-bottom:16px">' +
+      '<div class="memoria-field"><label>Proyecto: <input type="text" id="mem_proyecto" value="' +
+      (memoriaMeta.proyecto || '').replace(/"/g, '&quot;') + '" style="width:300px"></label></div>' +
+      '<div class="memoria-field"><label>Autor: <input type="text" id="mem_autor" value="' +
+      (memoriaMeta.autor || '').replace(/"/g, '&quot;') + '" style="width:300px"></label></div>' +
+      '<div class="memoria-field"><label>Notas: <input type="text" id="mem_notas" value="' +
+      (memoriaMeta.notas || '').replace(/"/g, '&quot;') + '" style="width:500px"></label></div>' +
+      '</div>';
+
+    document.getElementById('memoriaContent').innerHTML = formHtml + result.html;
+
+    result.diagrams.forEach(function (d) {
+      drawMiniDiagram(document.getElementById(d.canvasId), d.points, d.color, d.unit, { grid: '#ccc', text: '#444' });
+    });
+
+    ['mem_proyecto', 'mem_autor', 'mem_notas'].forEach(function (id) {
+      var key = id.replace('mem_', '');
+      document.getElementById(id).addEventListener('input', function (evt) {
+        memoriaMeta[key] = evt.target.value;
+        var display = document.getElementById('mem_display_' + key);
+        if (display) {
+          display.textContent = evt.target.value || (key === 'notas' ? '' : '(sin especificar)');
+          if (key === 'notas') display.hidden = !evt.target.value;
+        }
+      });
+    });
+  }
+
+  memoriaBtn.addEventListener('click', function () {
+    renderMemoria();
+    memoriaOverlay.hidden = false;
+  });
+  document.getElementById('memoriaCloseBtn').addEventListener('click', function () {
+    memoriaOverlay.hidden = true;
+  });
+  document.getElementById('memoriaPrintBtn').addEventListener('click', function () {
+    window.print();
   });
 
   // ---------------------------------------------------------------
@@ -514,4 +717,10 @@
   setMode('addNode');
   renderResultsPlaceholder();
   render();
+
+  FEM.Catalog.load().then(function () {
+    if (state.selection && state.selection.type === 'element') updatePropsPanel();
+  }).catch(function () {
+    if (state.selection && state.selection.type === 'element') updatePropsPanel();
+  });
 })();
