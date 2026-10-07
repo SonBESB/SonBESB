@@ -29,8 +29,31 @@
     gridSize: 500,
     snapEnabled: true,
     lastResult: null,
-    view: null
+    view: null,
+    activeProfile: {
+      E: MATERIAL_PRESETS.acero.E,
+      sectionType: 'rect',
+      rectParams: { b: 200, h: 400 },
+      circleParams: { d: 300 },
+      catalogRef: null // {id, axis}
+    }
   };
+
+  /** Construye una FEM.Section + E a partir del "perfil activo" (para barras nuevas). */
+  function buildActiveSection() {
+    var ap = state.activeProfile;
+    if (ap.sectionType === 'circle') {
+      return { E: ap.E, section: new FEM.Section('circle', { d: ap.circleParams.d }), catalogRef: null };
+    }
+    if (ap.sectionType === 'catalog' && ap.catalogRef && FEM.Catalog.loaded) {
+      var profile = FEM.Catalog.findById(ap.catalogRef.id);
+      if (profile) {
+        var sp = FEM.Catalog.toSectionParams(profile, ap.catalogRef.axis);
+        return { E: ap.E, section: new FEM.Section('manual', sp), catalogRef: { id: profile.id, family: profile.family, axis: ap.catalogRef.axis, label: profile.familyLabel } };
+      }
+    }
+    return { E: ap.E, section: new FEM.Section('rect', { b: ap.rectParams.b, h: ap.rectParams.h }), catalogRef: null };
+  }
 
   var HINTS = {
     addNode: 'Click en el lienzo para agregar un nodo (con snap a grilla de 0.5 m).',
@@ -209,8 +232,9 @@
         state.pendingElementNode = null;
       } else {
         var nodeI = state.model.nodes.find(function (n) { return n.id === state.pendingElementNode; });
-        var section = new FEM.Section('rect', { b: 200, h: 400 });
-        var el = state.model.addElement(nodeI, node, MATERIAL_PRESETS.acero.E, section);
+        var active = buildActiveSection();
+        var el = state.model.addElement(nodeI, node, active.E, active.section);
+        el.catalogRef = active.catalogRef;
         state.pendingElementNode = null;
         state.selection = { type: 'element', id: el.id };
         invalidateResults();
@@ -313,6 +337,103 @@
     profileSelect.addEventListener('change', updateSummary);
     axisSelect.addEventListener('change', updateSummary);
     populateProfiles();
+  }
+
+  // ---------------------------------------------------------------
+  // Perfil activo: material+seccion usados por defecto al dibujar
+  // barras nuevas en modo "+ Barra" (no afecta barras ya creadas).
+  // ---------------------------------------------------------------
+
+  function renderActiveProfilePanel() {
+    var ap = state.activeProfile;
+    var container = document.getElementById('activeProfileFields');
+    var materialOptions = Object.keys(MATERIAL_PRESETS).map(function (key) {
+      var preset = MATERIAL_PRESETS[key];
+      return '<option value="' + key + '"' + (preset.E === ap.E ? ' selected' : '') + '>' + preset.label + '</option>';
+    }).join('');
+    var customSelected = !Object.keys(MATERIAL_PRESETS).some(function (k) { return MATERIAL_PRESETS[k].E === ap.E; });
+
+    container.innerHTML =
+      '<label>Material<select id="ap_material">' + materialOptions +
+      '<option value="custom"' + (customSelected ? ' selected' : '') + '>Personalizado</option></select></label>' +
+      '<label>E (MPa)<input type="number" id="ap_E" value="' + ap.E + '"></label>' +
+      '<label>Tipo de sección<select id="ap_sectype">' +
+      '<option value="rect"' + (ap.sectionType === 'rect' ? ' selected' : '') + '>Rectangular</option>' +
+      '<option value="circle"' + (ap.sectionType === 'circle' ? ' selected' : '') + '>Circular sólida</option>' +
+      '<option value="catalog"' + (ap.sectionType === 'catalog' ? ' selected' : '') + '>Catálogo de perfiles</option>' +
+      '</select></label>' +
+      '<div id="ap_sectionFields"></div>' +
+      '<p class="muted">Se aplica a cada barra nueva dibujada con "+ Barra". Las barras ya creadas no cambian — edítalas individualmente seleccionándolas.</p>';
+
+    document.getElementById('ap_material').addEventListener('change', function (evt) {
+      if (MATERIAL_PRESETS[evt.target.value]) {
+        state.activeProfile.E = MATERIAL_PRESETS[evt.target.value].E;
+        document.getElementById('ap_E').value = state.activeProfile.E;
+      }
+    });
+    document.getElementById('ap_E').addEventListener('input', function (evt) {
+      state.activeProfile.E = parseFloat(evt.target.value) || state.activeProfile.E;
+    });
+    document.getElementById('ap_sectype').addEventListener('change', function (evt) {
+      state.activeProfile.sectionType = evt.target.value;
+      renderActiveProfileSectionFields();
+    });
+    renderActiveProfileSectionFields();
+  }
+
+  function renderActiveProfileSectionFields() {
+    var ap = state.activeProfile;
+    var container = document.getElementById('ap_sectionFields');
+    if (ap.sectionType === 'rect') {
+      container.innerHTML = '<div class="field-row">' +
+        '<div><label>b (mm)<input type="number" id="ap_b" value="' + ap.rectParams.b + '"></label></div>' +
+        '<div><label>h (mm)<input type="number" id="ap_h" value="' + ap.rectParams.h + '"></label></div></div>';
+      document.getElementById('ap_b').addEventListener('input', function (evt) { ap.rectParams.b = parseFloat(evt.target.value) || ap.rectParams.b; });
+      document.getElementById('ap_h').addEventListener('input', function (evt) { ap.rectParams.h = parseFloat(evt.target.value) || ap.rectParams.h; });
+    } else if (ap.sectionType === 'circle') {
+      container.innerHTML = '<label>d (mm)<input type="number" id="ap_d" value="' + ap.circleParams.d + '"></label>';
+      document.getElementById('ap_d').addEventListener('input', function (evt) { ap.circleParams.d = parseFloat(evt.target.value) || ap.circleParams.d; });
+    } else if (ap.sectionType === 'catalog') {
+      if (!FEM.Catalog.loaded) {
+        container.innerHTML = '<p class="muted">Cargando catálogo…</p>';
+        return;
+      }
+      var families = FEM.Catalog.families();
+      var currentFamily = (ap.catalogRef && ap.catalogRef.family) || (families[0] && families[0].family);
+      container.innerHTML = '<label>Familia<select id="ap_catfamily">' + families.map(function (f) {
+        return '<option value="' + f.family + '"' + (f.family === currentFamily ? ' selected' : '') + '>' + f.label + ' (' + f.family + ')</option>';
+      }).join('') + '</select></label>' +
+        '<label>Perfil<select id="ap_catprofile"></select></label>' +
+        '<label>Eje a usar<select id="ap_cataxis">' +
+        '<option value="strong"' + (!ap.catalogRef || ap.catalogRef.axis !== 'weak' ? ' selected' : '') + '>Fuerte (x-x)</option>' +
+        '<option value="weak"' + (ap.catalogRef && ap.catalogRef.axis === 'weak' ? ' selected' : '') + '>Débil (y-y)</option>' +
+        '</select></label><div id="ap_catalogSummary" class="catalog-summary"></div>';
+
+      var familySelect = document.getElementById('ap_catfamily');
+      var profileSelect = document.getElementById('ap_catprofile');
+      var axisSelect = document.getElementById('ap_cataxis');
+      var summary = document.getElementById('ap_catalogSummary');
+
+      function updateActiveCatalogRef() {
+        var profile = FEM.Catalog.findById(profileSelect.value);
+        if (!profile) return;
+        ap.catalogRef = { id: profile.id, family: profile.family, axis: axisSelect.value };
+        var sp = FEM.Catalog.toSectionParams(profile, axisSelect.value);
+        summary.textContent = 'A=' + sp.A.toFixed(0) + ' mm², I=' + sp.I.toExponential(3) + ' mm⁴, c=' + sp.c.toFixed(1) + ' mm';
+      }
+      function populateProfiles() {
+        var profiles = FEM.Catalog.byFamily(familySelect.value);
+        var currentId = ap.catalogRef && ap.catalogRef.id;
+        profileSelect.innerHTML = profiles.map(function (p) {
+          return '<option value="' + p.id + '"' + (p.id === currentId ? ' selected' : '') + '>' + p.id + '</option>';
+        }).join('');
+        updateActiveCatalogRef();
+      }
+      familySelect.addEventListener('change', populateProfiles);
+      profileSelect.addEventListener('change', updateActiveCatalogRef);
+      axisSelect.addEventListener('change', updateActiveCatalogRef);
+      populateProfiles();
+    }
   }
 
   function updatePropsPanel() {
@@ -716,9 +837,11 @@
   fitView();
   setMode('addNode');
   renderResultsPlaceholder();
+  renderActiveProfilePanel();
   render();
 
   FEM.Catalog.load().then(function () {
+    if (state.activeProfile.sectionType === 'catalog') renderActiveProfileSectionFields();
     if (state.selection && state.selection.type === 'element') updatePropsPanel();
   }).catch(function () {
     if (state.selection && state.selection.type === 'element') updatePropsPanel();

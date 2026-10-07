@@ -27,24 +27,29 @@ archivos; un servidor estático es solo la forma más portable de probarlo.)
 
 ## Cómo usar
 
-1. **+ Nodo**: click en el lienzo para colocar nodos (con snap a grilla de
+1. **Perfil activo** (panel derecho, arriba): elige material (E, con
+   presets de acero/hormigón/aluminio o un valor personalizado) y sección
+   (rectangular, circular sólida, o **catálogo de perfiles** — ver abajo)
+   *antes* de dibujar. Cada barra nueva se crea con este perfil; las ya
+   creadas no cambian si luego lo editas.
+2. **+ Nodo**: click en el lienzo para colocar nodos (con snap a grilla de
    0.5 m, desactivable).
-2. **+ Barra**: click en un nodo existente y luego en otro para conectar
-   una barra entre ambos.
-3. **Seleccionar**: click en un nodo o barra para editar sus propiedades
+3. **+ Barra**: click en un nodo existente y luego en otro para conectar
+   una barra entre ambos con el perfil activo.
+4. **Seleccionar**: click en un nodo o barra para editar sus propiedades
    en el panel derecho:
    - Nodo: tipo de apoyo (Libre / Articulado / Rodillo / Empotrado) y
      carga puntual (Fx, Fy en kN; momento en kN·m).
    - Barra: material (E, con presets de acero/hormigón/aluminio o un valor
      personalizado), sección (rectangular, circular sólida, o manual
      A/I/c) y carga distribuida uniforme (kN/m).
-4. **Borrar**: click en un nodo o barra para eliminarlo (borrar un nodo
+5. **Borrar**: click en un nodo o barra para eliminarlo (borrar un nodo
    borra también las barras y cargas conectadas a él).
-5. **Calcular**: resuelve el modelo y muestra reacciones, máximos por
+6. **Calcular**: resuelve el modelo y muestra reacciones, máximos por
    barra, y la tensión de von Mises máxima global con su ubicación.
-6. Panel "Mostrar": activa/desactiva los diagramas de M(x), V(x), N(x), la
+7. Panel "Mostrar": activa/desactiva los diagramas de M(x), V(x), N(x), la
    deformada (escala automática) y el mapa de von Mises sobre cada barra.
-7. "Verificación (opcional)": ingresa una tensión admisible/fluencia (MPa)
+8. "Verificación (opcional)": ingresa una tensión admisible/fluencia (MPa)
    para obtener un factor de seguridad PASA/NO PASA contra el von Mises
    máximo.
 

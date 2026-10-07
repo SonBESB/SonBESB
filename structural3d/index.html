@@ -11,48 +11,79 @@
     <h1>Pórticos 3D — esfuerzos, deformaciones, von Mises, N/V/T/M</h1>
     <p class="subtitle">
       Método matricial de rigidez espacial (6 GDL/nodo, Euler-Bernoulli + torsión
-      de Saint-Venant). Define nodos y barras por coordenadas (igual que
-      SAP2000/ETABS/STAAD: en 3D no se "dibuja" con el mouse, se tipea la
-      geometría y se confirma en el visor). Ver <code>README.md</code>.
+      de Saint-Venant). Dibuja tu geometría en planta/frontal/lateral (como un CAD
+      clásico) y confírmala en la vista 3D. Ver <code>README.md</code>.
     </p>
   </header>
 
   <div class="toolbar">
+    <div class="tool-group">
+      <button data-mode="addNode" class="tool-btn active">+ Nodo</button>
+      <button data-mode="addElement" class="tool-btn">+ Barra</button>
+      <button data-mode="select" class="tool-btn">Seleccionar</button>
+      <button data-mode="delete" class="tool-btn">Borrar</button>
+    </div>
+    <div class="tool-group">
+      <label><input type="checkbox" id="snapToggle" checked /> Snap 0.5 m</label>
+    </div>
+    <div class="tool-group" title="Coordenada usada para el eje que el panel activo no puede definir con un clic">
+      <label>X activa (m) <input type="number" id="activeX" value="0" style="width:60px"></label>
+      <label>Y activa (m) <input type="number" id="activeY" value="0" style="width:60px"></label>
+      <label>Z activa (m) <input type="number" id="activeZ" value="0" style="width:60px"></label>
+    </div>
     <div class="tool-group">
       <button id="calcBtn" class="primary-btn">Calcular</button>
       <button id="clearBtn" class="danger-btn">Limpiar todo</button>
       <button id="fitBtn" class="tool-btn">Ajustar vista</button>
       <button id="memoriaBtn" class="tool-btn" disabled>Memoria de cálculo</button>
     </div>
-    <div class="tool-group">
-      <label><input type="checkbox" id="showDefl" checked /> Deformada</label>
-      <label><input type="checkbox" id="showVM" checked /> Color von Mises</label>
-      <label>Escala deformada
-        <input type="number" id="deflScale" value="0" placeholder="auto" style="width:70px" />
-      </label>
-    </div>
   </div>
 
   <main class="workspace">
-    <div class="viewport-wrap">
-      <div id="viewport"></div>
-      <div id="hint" class="hint">Arrastrar = rotar · rueda = zoom · shift+arrastrar = pan</div>
+    <div class="sketch-grid">
+      <div class="sketch-pane">
+        <div class="sketch-pane-label">Planta (X-Y)</div>
+        <canvas id="canvasXY"></canvas>
+      </div>
+      <div class="sketch-pane">
+        <div class="sketch-pane-label">Frontal (X-Z)</div>
+        <canvas id="canvasXZ"></canvas>
+      </div>
+      <div class="sketch-pane">
+        <div class="sketch-pane-label">Lateral (Y-Z)</div>
+        <canvas id="canvasYZ"></canvas>
+      </div>
+      <div class="sketch-pane">
+        <div class="sketch-pane-label">3D</div>
+        <div id="viewport"></div>
+      </div>
+      <div id="hint" class="hint">Arrastrar = rotar (3D) · rueda = zoom · clic = según el modo activo</div>
     </div>
 
     <aside class="panel">
+      <section id="activeProfilePanel">
+        <h2>Perfil activo (para barras nuevas)</h2>
+        <div id="activeProfileFields"></div>
+      </section>
+
       <div class="tabs">
-        <button class="tab-btn active" data-tab="nodes">Nodos</button>
+        <button class="tab-btn active" data-tab="props">Propiedades</button>
+        <button class="tab-btn" data-tab="nodes">Nodos</button>
         <button class="tab-btn" data-tab="elements">Barras</button>
         <button class="tab-btn" data-tab="loads">Cargas</button>
         <button class="tab-btn" data-tab="results">Resultados</button>
       </div>
 
-      <section id="tab-nodes" class="tab-panel active">
+      <section id="tab-props" class="tab-panel active">
+        <div id="propsContent"><p class="muted">Selecciona un nodo o barra en cualquier panel para editarlo.</p></div>
+      </section>
+
+      <section id="tab-nodes" class="tab-panel">
         <table class="data-table" id="nodesTable">
           <thead><tr><th>#</th><th>X (m)</th><th>Y (m)</th><th>Z (m)</th><th>Apoyo</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
-        <button class="apply-btn" id="addNodeBtn">+ Agregar nodo</button>
+        <button class="apply-btn" id="addNodeBtn">+ Agregar nodo (0,0,0)</button>
       </section>
 
       <section id="tab-elements" class="tab-panel">
@@ -60,8 +91,8 @@
           <thead><tr><th>#</th><th>I</th><th>J</th><th>E (MPa)</th><th>Sección</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
-        <button class="apply-btn" id="addElementBtn">+ Agregar barra</button>
-        <div id="elementEdit" style="margin-top:10px"></div>
+        <button class="apply-btn" id="addElementBtn">+ Agregar barra (nodos 1-2)</button>
+        <p class="muted">Click en una fila (o en una barra en los paneles de boceto) para editarla en la pestaña "Propiedades".</p>
       </section>
 
       <section id="tab-loads" class="tab-panel">
@@ -110,6 +141,7 @@
   <script src="js/solver.js"></script>
   <script src="js/stress.js"></script>
   <script src="js/render3d.js"></script>
+  <script src="js/sketch2d.js"></script>
   <script src="js/memoria.js"></script>
   <script src="js/app.js"></script>
 </body>
