@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pórticos 3D — N/V/T/M, deformada y von Mises</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Pórticos 3D — esfuerzos, deformaciones, von Mises, N/V/T/M</h1>
+    <p class="subtitle">
+      Método matricial de rigidez espacial (6 GDL/nodo, Euler-Bernoulli + torsión
+      de Saint-Venant). Define nodos y barras por coordenadas (igual que
+      SAP2000/ETABS/STAAD: en 3D no se "dibuja" con el mouse, se tipea la
+      geometría y se confirma en el visor). Ver <code>README.md</code>.
+    </p>
+  </header>
+
+  <div class="toolbar">
+    <div class="tool-group">
+      <button id="calcBtn" class="primary-btn">Calcular</button>
+      <button id="clearBtn" class="danger-btn">Limpiar todo</button>
+      <button id="fitBtn" class="tool-btn">Ajustar vista</button>
+    </div>
+    <div class="tool-group">
+      <label><input type="checkbox" id="showDefl" checked /> Deformada</label>
+      <label><input type="checkbox" id="showVM" checked /> Color von Mises</label>
+      <label>Escala deformada
+        <input type="number" id="deflScale" value="0" placeholder="auto" style="width:70px" />
+      </label>
+    </div>
+  </div>
+
+  <main class="workspace">
+    <div class="viewport-wrap">
+      <div id="viewport"></div>
+      <div id="hint" class="hint">Arrastrar = rotar · rueda = zoom · shift+arrastrar = pan</div>
+    </div>
+
+    <aside class="panel">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="nodes">Nodos</button>
+        <button class="tab-btn" data-tab="elements">Barras</button>
+        <button class="tab-btn" data-tab="loads">Cargas</button>
+        <button class="tab-btn" data-tab="results">Resultados</button>
+      </div>
+
+      <section id="tab-nodes" class="tab-panel active">
+        <table class="data-table" id="nodesTable">
+          <thead><tr><th>#</th><th>X (m)</th><th>Y (m)</th><th>Z (m)</th><th>Apoyo</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button class="apply-btn" id="addNodeBtn">+ Agregar nodo</button>
+      </section>
+
+      <section id="tab-elements" class="tab-panel">
+        <table class="data-table" id="elementsTable">
+          <thead><tr><th>#</th><th>I</th><th>J</th><th>E (MPa)</th><th>Sección</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button class="apply-btn" id="addElementBtn">+ Agregar barra</button>
+        <div id="elementEdit" style="margin-top:10px"></div>
+      </section>
+
+      <section id="tab-loads" class="tab-panel">
+        <table class="data-table" id="loadsTable">
+          <thead><tr><th>Nodo</th><th>Fx</th><th>Fy</th><th>Fz</th><th>Mx</th><th>My</th><th>Mz</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button class="apply-btn" id="addLoadBtn">+ Agregar carga</button>
+        <p class="muted">Fuerzas en kN, momentos en kN·m.</p>
+      </section>
+
+      <section id="tab-results" class="tab-panel">
+        <div id="resultsContent">
+          <p class="muted">Presiona "Calcular" para resolver el modelo.</p>
+        </div>
+        <div id="allowablePanel" style="margin-top:12px">
+          <label>Tensión admisible / fluencia (MPa)
+            <input type="number" id="allowableStress" placeholder="ej. 250" />
+          </label>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="app-footer">
+    Unidades en pantalla: coordenadas en m, E/G en MPa, secciones en mm, cargas
+    en kN/kN·m, UDL en kN/m, tensiones en MPa. Internamente todo en N/mm/MPa.
+  </footer>
+
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/vendor/OrbitControls.js"></script>
+  <script src="js/units.js"></script>
+  <script src="js/linalg.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/frameElement.js"></script>
+  <script src="js/solver.js"></script>
+  <script src="js/stress.js"></script>
+  <script src="js/render3d.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
