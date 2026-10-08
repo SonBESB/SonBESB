@@ -133,7 +133,7 @@
       return;
     }
 
-    if (state.mode === 'select') {
+    if (state.mode === 'select' || state.mode === 'addLoad') {
       var n2 = Sketch.nodeAtPixel(sv.view, state.model, key, px, py);
       if (n2) {
         state.selection = { type: 'node', id: n2.id };
@@ -190,6 +190,7 @@
   var HINTS = {
     addNode: 'Click en cualquier panel para agregar un nodo. El eje que ese panel no puede fijar usa el valor "activo" del toolbar.',
     addElement: 'Click en un nodo (en cualquier panel) y luego en otro para crear una barra.',
+    addLoad: 'Click en un NODO (en cualquier panel) = apoyo y carga puntual. Click en una BARRA = carga distribuida. Edítalo en "Propiedades".',
     select: 'Click en un nodo o barra (en cualquier panel) para editarlo en "Propiedades".',
     delete: 'Click en un nodo o barra para eliminarlo.'
   };
@@ -370,7 +371,8 @@
   function renderPropsTab() {
     var container = document.getElementById('propsContent');
     if (!state.selection) {
-      container.innerHTML = '<p class="muted">Selecciona un nodo o barra en cualquier panel para editarlo.</p>';
+      container.innerHTML = '<p class="muted">Selecciona un nodo o barra en cualquier panel para editarlo (o usa "+ Carga").</p>' +
+        '<p class="muted">Apoyos y carga puntual van en los <b>nodos</b>. La carga distribuida va en las <b>barras</b>.</p>';
       return;
     }
     if (state.selection.type === 'node') {
@@ -506,6 +508,10 @@
       '<label>Nodo I / Nodo J<div style="display:flex;gap:6px">' +
       '<select id="ee_nodeI" style="flex:1">' + nodeOptionsHtml(el.nodeI.id) + '</select>' +
       '<select id="ee_nodeJ" style="flex:1">' + nodeOptionsHtml(el.nodeJ.id) + '</select></div></label>' +
+      '<div class="field-row">' +
+      '<div><label>UDLy (kN/m)<input type="number" id="ee_udlY" value="' + el.udlY + '"></label></div>' +
+      '<div><label>UDLz (kN/m)<input type="number" id="ee_udlZ" value="' + el.udlZ + '"></label></div></div>' +
+      '<hr style="border-color:var(--border);margin:12px 0">' +
       '<label>Material rápido: ' + matButtons + '</label>' +
       '<div class="field-row">' +
       '<div><label>E (MPa)<input type="number" id="ee_E" value="' + el.E + '"></label></div>' +
@@ -516,10 +522,7 @@
       '<option value="catalog"' + (el.section.type === 'manual' && el.catalogRef ? ' selected' : '') + '>Catálogo de perfiles</option>' +
       '</select></label>' +
       '<div id="ee_sectionFields"></div>' +
-      '<div class="field-row">' +
-      '<div><label>UDLy (kN/m)<input type="number" id="ee_udlY" value="' + el.udlY + '"></label></div>' +
-      '<div><label>UDLz (kN/m)<input type="number" id="ee_udlZ" value="' + el.udlZ + '"></label></div>' +
-      '<div><label>β (°)<input type="number" id="ee_beta" value="' + el.beta + '"></label></div></div>' +
+      '<label>β, ángulo de giro de la sección (°)<input type="number" id="ee_beta" value="' + el.beta + '"></label>' +
       '<button class="apply-btn" id="ee_apply">Aplicar</button>' +
       '<button class="remove-btn" id="ee_delete">Eliminar barra</button>';
 

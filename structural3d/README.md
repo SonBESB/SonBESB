@@ -67,21 +67,26 @@ depender de que `cdn.jsdelivr.net` o similar esté disponible.
 3. **+ Barra**: click en un nodo (en cualquier panel) y luego en otro —
    pueden estar en paneles distintos — para conectarlos con el perfil
    activo.
-4. **Seleccionar**: click en un nodo o barra (en cualquier panel, o una
-   fila de tabla) para editarlo en la pestaña **Propiedades**: apoyo
-   (Libre / Pin 3D / Fijo) y carga puntual del nodo, o material/sección/
-   UDL/ángulo β de la barra.
-5. **Borrar**: click en un nodo o barra para eliminarlo (borrar un nodo
+4. **+ Carga**: click en un **nodo** (en cualquier panel) para poner apoyo
+   (Libre / Pin 3D / Fijo) y/o carga puntual (Fx/Fy/Fz en kN, Mx/My/Mz en
+   kN·m); click en una **barra** para poner carga distribuida (UDLy/UDLz
+   en kN/m). Igual que en el módulo 2D: apoyos y cargas puntuales viven en
+   los nodos, la distribuida vive en la barra — este modo lo recuerda por ti.
+5. **Seleccionar**: funciona igual que "+ Carga" pero para editar
+   material/sección/β en vez de cargas — click en un nodo o barra (en
+   cualquier panel, o una fila de tabla) para editarlo en la pestaña
+   **Propiedades**.
+6. **Borrar**: click en un nodo o barra para eliminarlo (borrar un nodo
    también borra las barras y cargas conectadas a él).
-6. **Calcular**: resuelve el modelo. Pestaña **Resultados**: reacciones,
+7. **Calcular**: resuelve el modelo. Pestaña **Resultados**: reacciones,
    máximos por barra, **diagramas N/Vy/Vz/T/My/Mz(x) por barra**, von Mises
    máximo global con ubicación, y el corte de torsión máximo aproximado
    por barra (ver limitaciones).
-7. En el visor 3D (cuarto panel): arrastrar rota la cámara, rueda hace
+8. En el visor 3D (cuarto panel): arrastrar rota la cámara, rueda hace
    zoom. "Ajustar vista" reencuadra los tres paneles 2D y el visor 3D a
    los nodos actuales. La forma deformada se dibuja coloreada por von
    Mises (azul=bajo, rojo=alto), con escala automática.
-8. **Memoria de cálculo**: tras calcular, abre una vista imprimible con
+9. **Memoria de cálculo**: tras calcular, abre una vista imprimible con
    el modelo, metodología y resultados completos — ver sección propia
    abajo.
 

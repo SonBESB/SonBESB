@@ -58,6 +58,7 @@
   var HINTS = {
     addNode: 'Click en el lienzo para agregar un nodo (con snap a grilla de 0.5 m).',
     addElement: 'Click en un nodo existente y luego en otro para crear una barra entre ambos.',
+    addLoad: 'Click en un NODO (círculo) = apoyo y carga puntual. Click en una BARRA (línea) = carga distribuida.',
     select: 'Click en un nodo o barra para ver y editar sus propiedades.',
     delete: 'Click en un nodo o barra para eliminarlo. Borrar un nodo borra tambien sus barras y cargas.'
   };
@@ -244,7 +245,7 @@
       return;
     }
 
-    if (state.mode === 'select') {
+    if (state.mode === 'select' || state.mode === 'addLoad') {
       var n2 = nodeAtPixel(px, py);
       if (n2) {
         state.selection = { type: 'node', id: n2.id };
@@ -438,7 +439,10 @@
 
   function updatePropsPanel() {
     if (!state.selection) {
-      propsPanel.innerHTML = '<h2>Propiedades</h2><p class="muted">Selecciona un nodo o una barra para editarlo.</p>';
+      propsPanel.innerHTML = '<h2>Propiedades</h2>' +
+        '<p class="muted">Selecciona un nodo o una barra para editarlo (o usa "+ Carga").</p>' +
+        '<p class="muted">Apoyos y carga puntual van en los <b>nodos</b> (círculos). ' +
+        'La carga distribuida va en las <b>barras</b> (líneas).</p>';
       return;
     }
 
@@ -461,6 +465,7 @@
         '<option value="roller"' + (currentLabel === 'roller' ? ' selected' : '') + '>Rodillo</option>' +
         '<option value="fixed"' + (currentLabel === 'fixed' ? ' selected' : '') + '>Empotrado</option>' +
         '</select></label>' +
+        '<hr style="border-color:var(--border);margin:12px 0">' +
         '<label>Carga puntual' +
         '<div class="field-row">' +
         '<div><input type="number" id="f_fx" value="' + fxKn + '" placeholder="Fx (kN)"></div>' +
@@ -509,6 +514,10 @@
 
       propsPanel.innerHTML =
         '<h2>Barra #' + el.id + ' (L = ' + (el.length() / 1000).toFixed(3) + ' m)</h2>' +
+        '<label>Carga distribuida uniforme w (kN/m)<br>' +
+        '<input type="number" id="f_udl" value="' + udlKnm + '">' +
+        '<span class="muted">positivo = sentido -y local (hacia "abajo" tal como se dibujó la barra)</span></label>' +
+        '<hr style="border-color:var(--border);margin:12px 0">' +
         '<label>Material' +
         '<select id="f_material">' + materialOptions + '<option value="custom"' + (customSelected ? ' selected' : '') + '>Personalizado</option></select></label>' +
         '<label>E (MPa)<input type="number" id="f_E" value="' + el.E + '"></label>' +
@@ -520,9 +529,6 @@
         '<option value="catalog"' + (secType === 'manual' && el.catalogRef ? ' selected' : '') + '>Catálogo de perfiles</option>' +
         '</select></label>' +
         '<div id="sectionFields"></div>' +
-        '<label>Carga distribuida uniforme w (kN/m)<br>' +
-        '<input type="number" id="f_udl" value="' + udlKnm + '">' +
-        '<span class="muted">positivo = sentido -y local (hacia "abajo" tal como se dibujó la barra)</span></label>' +
         '<button class="apply-btn" id="applyElement">Aplicar</button>' +
         '<button class="remove-btn" id="removeElement">Eliminar barra</button>';
 
