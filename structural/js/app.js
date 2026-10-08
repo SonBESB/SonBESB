@@ -844,6 +844,7 @@
   setMode('addNode');
   renderResultsPlaceholder();
   renderActiveProfilePanel();
+  updatePropsPanel();
   render();
 
   FEM.Catalog.load().then(function () {
