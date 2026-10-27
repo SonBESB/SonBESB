@@ -142,7 +142,7 @@ def render_pump_operating_point_tab() -> None:
             if min(curve_q) > 0:
                 st.caption(
                     f"⚠ La curva de bomba no incluye Q=0: el shutoff head usado para el "
-                    f"chequeo de presion ({nominal_shutoff_head_m:.2f} m) es una EXTRAPOLACION "
+                    f"chequeo de presión ({nominal_shutoff_head_m:.2f} m) es una EXTRAPOLACIÓN "
                     "del ajuste, no un dato medido."
                 )
 
@@ -162,17 +162,17 @@ def render_pump_operating_point_tab() -> None:
                 pt_eta = [p.efficiency for p in curve.points]
                 eta = float(np.interp(op.flow_m3_s, pt_q, pt_eta))
             power = compute_power(fluid.density_kg_m3, op.flow_m3_s, op.head_m, eta, motor_efficiency_pct / 100.0)
-            fig.add_trace(go.Scatter(x=[op.flow_m3_s * 1000], y=[op.head_m], mode="markers", marker=dict(size=10), name=f"{scenario['label']} (operacion)", showlegend=False))
+            fig.add_trace(go.Scatter(x=[op.flow_m3_s * 1000], y=[op.head_m], mode="markers", marker=dict(size=10), name=f"{scenario['label']} (operación)", showlegend=False))
             results.append(
                 {
                     "Escenario": scenario["label"],
                     "Q (L/s)": round(op.flow_m3_s * 1000, 2),
                     "H (m)": round(op.head_m, 2),
                     "eta bomba (%)": round(eta * 100, 1),
-                    "P hidraulica (kW)": round(power.hydraulic_power_w / 1000, 2),
-                    "P electrica (kW)": round(power.electrical_power_w / 1000, 2),
+                    "P hidráulica (kW)": round(power.hydraulic_power_w / 1000, 2),
+                    "P eléctrica (kW)": round(power.electrical_power_w / 1000, 2),
                     "P eje (kW)": round(power.shaft_power_w / 1000, 2),
-                    "P electrica (HP)": round(power.electrical_power_w / 745.699872, 2),
+                    "P eléctrica (HP)": round(power.electrical_power_w / 745.699872, 2),
                     "Velocidad por tramo (m/s)": "; ".join(f"{seg.label}: {op.flow_m3_s / seg.area_m2:.3f}" for seg in segments),
                     "Relación de velocidad": scenario["phi"],
                     "Estado": "equilibrio",
@@ -182,7 +182,7 @@ def render_pump_operating_point_tab() -> None:
             results.append(
                 {
                     "Escenario": scenario["label"], "Q (L/s)": None, "H (m)": None, "eta bomba (%)": None,
-                    "P hidraulica (kW)": None, "P electrica (kW)": None, "Estado": f"SIN INTERSECCION: {op.reason}",
+                    "P hidráulica (kW)": None, "P eléctrica (kW)": None, "Estado": f"SIN INTERSECCION: {op.reason}",
                 }
             )
 
@@ -194,16 +194,16 @@ def render_pump_operating_point_tab() -> None:
                 flow, head, power = st.columns(3)
                 flow.metric("Caudal", f"{nominal['Q (L/s)']:.2f} L/s")
                 head.metric("Altura", f"{nominal['H (m)']:.2f} m")
-                power.metric("Potencia eléctrica", f"{nominal['P electrica (kW)']:.2f} kW")
+                power.metric("Potencia eléctrica", f"{nominal['P eléctrica (kW)']:.2f} kW")
                 summary_detail = evaluate_system(segments, nominal["Q (L/s)"] / 1000, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
                 more = st.columns(3)
                 more[0].metric("Pérdidas por fricción", f"{sum(e.friction_head_loss_m for e in summary_detail.segment_evaluations):.2f} m")
                 more[1].metric("Pérdidas por accesorios", f"{sum(e.minor_head_loss_m for e in summary_detail.segment_evaluations):.2f} m")
                 more[2].metric("Desnivel estático", f"{static_head_m:.2f} m")
                 powers = st.columns(3)
-                powers[0].metric("Potencia hidráulica", f"{nominal['P hidraulica (kW)']:.2f} kW")
+                powers[0].metric("Potencia hidráulica", f"{nominal['P hidráulica (kW)']:.2f} kW")
                 powers[1].metric("Potencia al eje", f"{nominal['P eje (kW)']:.2f} kW")
-                powers[2].metric("Potencia eléctrica", f"{nominal['P electrica (HP)']:.2f} HP")
+                powers[2].metric("Potencia eléctrica", f"{nominal['P eléctrica (HP)']:.2f} HP")
 
             else:
                 st.info("No hay un punto de equilibrio. Revisa la curva y el desnivel de tu sistema.")
@@ -249,10 +249,10 @@ def render_pump_operating_point_tab() -> None:
         st.subheader("5 · Verificaciones y descarga")
         st.caption("Después de revisar el caudal, comprueba presión, velocidad y, si tienes los datos, succión y cierre de válvulas.")
         with st.expander("Detalle por tramo: velocidad, pérdidas y clase de presión", expanded=True):
-            st.subheader("Detalle por tramo (en el punto de operacion nominal)")
+            st.subheader("Detalle por tramo (en el punto de operación nominal)")
             col_vmin, col_vmax = st.columns(2)
-            v_min = col_vmin.number_input("Velocidad minima recomendada (m/s) — guia, no norma", min_value=0.0, value=DEFAULT_MIN_VELOCITY_M_S, key="pump_vmin")
-            v_max = col_vmax.number_input("Velocidad maxima recomendada (m/s) — guia, no norma", min_value=0.1, value=DEFAULT_MAX_VELOCITY_M_S, key="pump_vmax")
+            v_min = col_vmin.number_input("Velocidad mínima recomendada (m/s) — guía, no norma", min_value=0.0, value=DEFAULT_MIN_VELOCITY_M_S, key="pump_vmin")
+            v_max = col_vmax.number_input("Velocidad máxima recomendada (m/s) — guía, no norma", min_value=0.1, value=DEFAULT_MAX_VELOCITY_M_S, key="pump_vmax")
 
             velocity_checks = []
             if nominal:
@@ -283,7 +283,7 @@ def render_pump_operating_point_tab() -> None:
                     elif vcheck.status == "ALTA":
                         st.warning(f"{vcheck.label}: v={vcheck.velocity_m_s:.3f} m/s por encima de {vcheck.max_velocity_m_s:g} m/s — riesgo de erosion/golpe de ariete mas severo.")
             else:
-                st.info("Sin punto de operacion nominal (ver estado en la tabla de resultados) — no se muestra detalle por tramo.")
+                st.info("Sin punto de operación nominal (ver estado en la tabla de resultados) — no se muestra detalle por tramo.")
 
         with st.expander("Presión admisible de las tuberías"):
             pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, static_head_m, catalog_rows)
@@ -381,7 +381,7 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, 
                 for issue in row["issues"]:
                     st.warning(issue)
                 if row['availability'] != 'standard':
-                    st.caption("Disponibilidad: " + ("bajo pedido especial" if row['availability'] == 'special_order' else "cantidad minima requerida"))
+                    st.caption("Disponibilidad: " + ("bajo pedido especial" if row['availability'] == 'special_order' else "cantidad mínima requerida"))
                 di = row["inside_diameter_mm"]
                 roughness = st.number_input("Rugosidad PEXGOL (mm)", min_value=0.0, value=0.0007, format="%.5f", key=f"{key_prefix}_pex_rough_{i}")
                 st.caption("Pagina 23: 0,0005–0,0007 mm. Se propone el extremo superior; editable segun servicio.")
@@ -392,17 +392,17 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, 
                     try:
                         pressure, ref_temp = allowed_pressure_bar(cls, fluid.temperature_c)
                         row.update(allowable_pressure_bar=pressure, design_temperature_c=fluid.temperature_c, table_temperature_c=ref_temp, pressure_source='Tabla 9.1, p. 9, agua, C=1.25')
-                        st.caption(f"Presion admisible preliminar: {pressure:g} bar a temperatura tabulada {ref_temp} C (escalon superior, sin interpolar).")
+                        st.caption(f"Presión admisible preliminar: {pressure:g} bar a temperatura tabulada {ref_temp} C (escalón superior, sin interpolar).")
                     except ValueError as exc:
                         st.warning(str(exc))
                 elif fluid is not None:
-                    st.warning("Tabla 9.1 solo para agua. Presion admisible no evaluada para fluido personalizado.")
+                    st.warning("Tabla 9.1 solo para agua. Presión admisible no evaluada para fluido personalizado.")
                 pn_label = f"PEXGOL Clase {cls}"
             else:
                 col2, col3 = st.columns(2)
                 di = col2.number_input("Diametro interior (mm)", min_value=1.0, value=250.0, key=f"{key_prefix}_di_{i}", help="Usa el diámetro libre por donde circula el agua. No ingreses el diámetro exterior ni el DN sin comprobar su equivalencia.")
                 roughness = col3.number_input("Rugosidad absoluta (mm)", min_value=0.0, value=0.007, format="%.4f", key=f"{key_prefix}_rough_{i}", help="Irregularidad de la pared interior en mm. El 0,007 inicial es un supuesto del ejemplo; sustituye según material, fabricante y estado de servicio.")
-                pn_label = st.selectbox("Clase de presion (PN) — referencia a 20 C, sin derateo", list(PN_BAR_TABLE), index=1, key=f"{key_prefix}_pn_{i}") if show_pressure_class else None
+                pn_label = st.selectbox("Clase de presión (PN) — referencia a 20 C, sin derateo", list(PN_BAR_TABLE), index=1, key=f"{key_prefix}_pn_{i}") if show_pressure_class else None
             if show_pressure_class:
                 pn_labels.append(pn_label)
             catalog_rows.append(row)
@@ -508,7 +508,7 @@ def _apply_scenario(base_curve: PumpCurve, scenario: dict) -> PumpCurve:
 
 
 def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict | None):
-    with st.expander("Verificacion NPSH (succion) — opcional"):
+    with st.expander("Verificación NPSH (succión) — opcional"):
         st.caption(
             "Comprueba si la succión tiene margen suficiente para evitar cavitación. NPSHa = (Patm - Pvap)/(rho*g) - h_succion - "
             "h_friccion_succion - h_singulares_succion. Formulas y margen de seguridad "
@@ -524,14 +524,14 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
         col1, col2 = st.columns(2)
         altitude = col1.number_input("Altitud de la bomba (m s.n.m.)", value=0.0, key=f"{key_prefix}_npsh_alt")
         suction_head = col2.number_input(
-            "Altura de succion (m) — positivo = succion en elevacion, negativo = succion inundada",
+            "Altura de succión (m) — positivo = succión en elevación, negativo = succión inundada",
             value=3.0, key=f"{key_prefix}_npsh_suction_head",
         )
         suction_segment = _render_segments_section(f"{key_prefix}_npsh_suction", show_pressure_class=False, fluid=fluid)[0][0] if st.checkbox(
-            "Definir tramo de succion (para friccion)", key=f"{key_prefix}_npsh_suction_seg_toggle"
+            "Definir tramo de succión (para fricción)", key=f"{key_prefix}_npsh_suction_seg_toggle"
         ) else None
 
-        npsh_required = st.number_input("NPSH requerido por el fabricante en el punto de operacion (m)", min_value=0.0, value=3.0, key=f"{key_prefix}_npsh_req")
+        npsh_required = st.number_input("NPSH requerido por el fabricante en el punto de operación (m)", min_value=0.0, value=3.0, key=f"{key_prefix}_npsh_req")
         margin = st.number_input("Margen de seguridad (m)", min_value=0.0, value=DEFAULT_NPSH_SAFETY_MARGIN_M, key=f"{key_prefix}_npsh_margin")
 
         friction_head = 0.0
@@ -542,7 +542,7 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
             friction_head = ev.friction_head_loss_m
             minor_head = ev.minor_head_loss_m
         elif not suction_segment:
-            st.info("Sin tramo de succion definido: NPSHa se calcula sin perdidas de friccion en la succion (hf=hs=0).")
+            st.info("Sin tramo de succión definido: NPSHa se calcula sin pérdidas de fricción en la succión (hf=hs=0).")
 
         result = npsh_available(altitude, fluid.temperature_c, suction_head, friction_head, minor_head, fluid.density_kg_m3)
         check = check_npsh(result.npsh_available_m, npsh_required, margin)
@@ -556,32 +556,32 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
 
 
 def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_head_m, fluid, static_head_m, catalog_rows=None):
-    st.subheader("Presion de diseno vs clase PN (condicion de caudal cero / shutoff)")
+    st.subheader("Presión de diseño vs clase PN (condición de caudal cero / shutoff)")
     st.caption(
         "A caudal "
-        "cero no hay perdida por friccion: toda la carga de la bomba en Q=0 aparece como "
-        "presion estatica en la descarga — es la condicion mas exigente en regimen "
-        "permanente (sin contar golpe de ariete, ver seccion aparte). Perfil de elevacion "
-        "repartido proporcional a la longitud — ver limitacion en "
+        "cero no hay pérdida por fricción: toda la carga de la bomba en Q=0 aparece como "
+        "presión estática en la descarga — es la condición más exigente en régimen "
+        "permanente (sin contar golpe de ariete, ver sección aparte). Perfil de elevación "
+        "repartido proporcional a la longitud — ver limitación en "
         "docs/HYDRAULICS_PUMP_OPERATING_POINT.md."
     )
     if shutoff_head_m is None or not pn_labels:
-        st.info("Sin punto de operacion nominal o sin clases PN definidas — no se evalua.")
+        st.info("Sin punto de operación nominal o sin clases PN definidas — no se evalúa.")
         return None
 
     catalog_rows = catalog_rows or [None] * len(segments)
     limits = [r['allowable_pressure_bar'] if r else PN_BAR_TABLE[pn] for r, pn in zip(catalog_rows, pn_labels)]
     if any(p is None for p in limits):
-        st.warning("Presion no evaluada: hay un tramo de catálogo fuera del alcance de su referencia de agua/temperatura.")
+        st.warning("Presión no evaluada: hay un tramo de catálogo fuera del alcance de su referencia de agua/temperatura.")
         return None
     if any(catalog_rows):
-        st.warning("Comparacion PRELIMINAR con catalogo sin verificar. PASS no significa aprobacion para diseno.")
+        st.warning("Comparación PRELIMINAR con catálogo sin verificar. PASS no significa aprobación para diseño.")
     checks = build_shutoff_pressure_profile(segments, shutoff_head_m, static_head_m, fluid.density_kg_m3, pn_labels, allowable_pressures_bar=limits)
     st.dataframe(
         [
             {
                 "Tramo": c.label, "Desde (m)": round(c.start_length_m, 1), "Hasta (m)": round(c.end_length_m, 1),
-                "Presion de diseno (bar)": round(c.max_design_pressure_bar, 2), "Clase": c.pn_label,
+                "Presión de diseño (bar)": round(c.max_design_pressure_bar, 2), "Clase": c.pn_label,
                 "Admisible (bar)": c.pn_bar, "Margen (bar)": round(c.margin_bar, 2), "Estado": "PASS" if c.passed else "FAIL",
             }
             for c in checks
@@ -590,9 +590,9 @@ def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_hea
     )
     failed = [c for c in checks if not c.passed]
     if failed:
-        st.error(f"{len(failed)} tramo(s) con presion de diseno por ENCIMA de su clase PN.")
+        st.error(f"{len(failed)} tramo(s) con presión de diseño por ENCIMA de su clase PN.")
     else:
-        st.success("Todos los tramos dentro de su clase PN en la condicion de shutoff.")
+        st.success("Todos los tramos dentro de su clase PN en la condición de shutoff.")
     return checks
 
 
@@ -604,11 +604,11 @@ def _render_surge_section(key_prefix, segments, fluid, nominal, catalog_rows=Non
             "delgada) — no reemplaza un analisis transiente completo. Formulas y "
             "limitaciones en docs/HYDRAULICS_PUMP_OPERATING_POINT.md."
         )
-        enabled = st.checkbox("Calcular sobrepresion por cierre de valvula", key=f"{key_prefix}_surge_enabled")
+        enabled = st.checkbox("Calcular sobrepresión por cierre de válvula", key=f"{key_prefix}_surge_enabled")
         if not enabled:
             return None
         if not nominal:
-            st.info("Sin punto de operacion nominal — no se puede estimar la velocidad a cortar.")
+            st.info("Sin punto de operación nominal — no se puede estimar la velocidad a cortar.")
             return None
 
         segment_labels = [s.label for s in segments]
@@ -663,14 +663,14 @@ def _render_surge_section(key_prefix, segments, fluid, nominal, catalog_rows=Non
 
         col_a, col_b, col_c = st.columns(3)
         col_a.metric("Celeridad de onda", f"{result.wave_speed_m_s:.0f} m/s")
-        col_b.metric("Tiempo critico (2L/a)", f"{result.critical_time_s:.2f} s")
+        col_b.metric("Tiempo crítico (2L/a)", f"{result.critical_time_s:.2f} s")
         col_c.metric("Regimen de cierre", result.closure_regime)
-        st.metric("Sobrepresion (golpe de ariete)", f"{result.surge_head_m:.2f} m")
-        st.metric("Presion pico estimada (estatica + golpe)", f"{result.peak_pressure_head_m:.2f} m")
+        st.metric("Sobrepresión (golpe de ariete)", f"{result.surge_head_m:.2f} m")
+        st.metric("Presión pico estimada (estática + golpe)", f"{result.peak_pressure_head_m:.2f} m")
         st.warning(
-            "Este valor debe sumarse (no reemplazar) al chequeo de presion vs PN de la "
-            "seccion anterior para ese tramo — un cierre rapido puede llevar la presion "
-            "pico muy por encima de la condicion de shutoff en regimen permanente."
+            "Este valor debe sumarse (no reemplazar) al chequeo de presión vs PN de la "
+            "sección anterior para ese tramo — un cierre rápido puede llevar la presión "
+            "pico muy por encima de la condición de shutoff en régimen permanente."
         )
         return result
 
@@ -716,7 +716,7 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
             "regimen": surge_result.closure_regime, "sobrepresion_m": surge_result.surge_head_m,
             "presion_pico_m": surge_result.peak_pressure_head_m,
         },
-        "_aviso": "MODELO DE INGENIERIA generado por BESB Piping (core/hydraulics/) — no reemplaza calculo de proveedor ni norma de diseno del proyecto.",
+        "_aviso": "MODELO DE INGENIERÍA generado por BESB Piping (core/hydraulics/) — no reemplaza cálculo de proveedor ni norma de diseño del proyecto.",
     }
     st.caption("Descarga los archivos a tu equipo. La aplicación pública no guarda un historial compartido.")
     pdf = build_calculation_pdf(case, figure)
@@ -730,15 +730,15 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
 def _build_executive_summary(nominal, results, npsh_result, segments, velocity_checks=None, pressure_checks=None, surge_result=None) -> str:
     if not nominal:
         return (
-            "No se encontro un punto de operacion en equilibrio para el escenario nominal — "
+            "No se encontró un punto de operación en equilibrio para el escenario nominal — "
             "revisa si la curva de bomba y la curva de sistema se cruzan en el rango de "
             "caudal evaluado."
         )
     lines = [
-        f"- Punto de operacion nominal: **Q = {nominal['Q (L/s)']} L/s**, "
+        f"- Punto de operación nominal: **Q = {nominal['Q (L/s)']} L/s**, "
         f"**H = {nominal['H (m)']} m**, eficiencia de bomba usada {nominal['eta bomba (%)']}%.",
-        f"- Potencia hidraulica {nominal['P hidraulica (kW)']} kW; potencia electrica estimada "
-        f"**{nominal['P electrica (kW)']} kW** ({nominal['P electrica (kW)'] * 1.34102:.1f} HP).",
+        f"- Potencia hidráulica {nominal['P hidráulica (kW)']} kW; potencia eléctrica estimada "
+        f"**{nominal['P eléctrica (kW)']} kW** ({nominal['P eléctrica (kW)'] * 1.34102:.1f} HP).",
     ]
     other = [r for r in results if r["Escenario"] != "Nominal"]
     if other:
@@ -746,8 +746,8 @@ def _build_executive_summary(nominal, results, npsh_result, segments, velocity_c
     failed = [r for r in results if "SIN INTERSECCION" in str(r["Estado"])]
     if failed:
         lines.append(
-            f"- **{len(failed)} escenario(s) sin interseccion** entre curva de bomba y curva "
-            "de sistema — la bomba no es capaz de vencer la carga estatica/friccional en "
+            f"- **{len(failed)} escenario(s) sin intersección** entre curva de bomba y curva "
+            "de sistema — la bomba no es capaz de vencer la carga estática/friccional en "
             "esas condiciones."
         )
     if npsh_result is not None:
@@ -758,7 +758,7 @@ def _build_executive_summary(nominal, results, npsh_result, segments, velocity_c
             f"-> **{estado}**."
         )
     else:
-        lines.append("- NPSH no evaluado en esta corrida (seccion opcional sin activar).")
+        lines.append("- NPSH no evaluado en esta corrida (sección opcional sin activar).")
 
     if velocity_checks:
         bad = [v for v in velocity_checks if v.status != "OK"]
@@ -775,16 +775,16 @@ def _build_executive_summary(nominal, results, npsh_result, segments, velocity_c
         failed_pn = [c for c in pressure_checks if not c.passed]
         if failed_pn:
             lines.append(
-                f"- **{len(failed_pn)} tramo(s) superan su clase PN en condicion de shutoff** "
+                f"- **{len(failed_pn)} tramo(s) superan su clase PN en condición de shutoff** "
                 "(caudal cero): " + ", ".join(f"{c.label} ({c.max_design_pressure_bar:.1f} bar > {c.pn_label})" for c in failed_pn) + "."
             )
         else:
-            lines.append("- Presion de diseno (shutoff) dentro de la clase PN en todos los tramos.")
+            lines.append("- Presión de diseño (shutoff) dentro de la clase PN en todos los tramos.")
 
     if surge_result is not None:
         lines.append(
-            f"- Golpe de ariete ({surge_result.closure_regime.lower()}): sobrepresion "
-            f"{surge_result.surge_head_m:.2f} m, presion pico estimada "
+            f"- Golpe de ariete ({surge_result.closure_regime.lower()}): sobrepresión "
+            f"{surge_result.surge_head_m:.2f} m, presión pico estimada "
             f"**{surge_result.peak_pressure_head_m:.2f} m** — sumar contra la clase PN, no "
             "esta incluida en el chequeo de shutoff de arriba."
         )
