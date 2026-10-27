@@ -66,6 +66,21 @@ def _render_stepper(stages: list[str], key: str = "nav_stage") -> str:
 
 
 def render_pump_operating_point_tab() -> None:
+    with st.expander("📖 ¿Cómo se usa esta calculadora? (guía rápida)", expanded=False):
+        st.markdown(
+            "Esta calculadora encuentra el **punto de operación** de tu sistema de bombeo: el caudal y "
+            "la altura donde la curva de tu bomba se cruza con la curva de tu tubería. Son 4 pasos:\n\n"
+            "1. **Líquido** — elige agua (o ingresa densidad/viscosidad de otro líquido) y el desnivel "
+            "entre el origen y el destino.\n"
+            "2. **Tuberías** — define los tramos de tu línea (longitud, diámetro, accesorios). Puedes "
+            "cargar dimensiones de catálogo (HDPE/PEXGOL) en vez de escribirlas a mano.\n"
+            "3. **Bomba** — pega los puntos Q-H de la curva de tu bomba (los que da el fabricante) y, "
+            "si quieres comparar velocidades o bombas en paralelo/serie, agrega esos escenarios.\n"
+            "4. **Resultados** — revisa el caudal y la altura de operación, las verificaciones "
+            "(velocidad, presión, NPSH, golpe de ariete) y descarga la memoria de cálculo en PDF.\n\n"
+            "Usa los botones de arriba (① Líquido, ② Tuberías...) para moverte entre pasos en cualquier "
+            "momento — no hace falta llenarlos en orden ni completarlos todos de una vez."
+        )
     # Preserve controls while incomplete fluid fields temporarily stop rendering.
     for key in list(st.session_state):
         if key.startswith("pump_") and key not in {"pump_curve_editor", "pump_export", "pump_add_scenario", "pump_remove_scenario", "pump_pdf"}:

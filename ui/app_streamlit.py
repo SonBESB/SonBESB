@@ -664,11 +664,12 @@ def main() -> None:
 
 def pumping_main() -> None:
     st.markdown("""<style>
+    [data-testid="stAppViewContainer"] {background:linear-gradient(180deg,#eef4fb 0%,#e4edf9 55%,#dbe8f6 100%); background-attachment:fixed;}
     .block-container {max-width:1100px; padding-top:1.5rem;}
     h1 {letter-spacing:-0.035em;}
     [data-testid="stMetric"] {background:#edf5fc; border:1px solid #d2e4f3; border-radius:12px; padding:14px;}
     [data-testid="stMetricValue"] {color:#125b95;}
-    [data-testid="stExpander"] {border-radius:12px;}
+    [data-testid="stExpander"] {border-radius:12px; background:#ffffff; border:1px solid #dce8f2; box-shadow:0 2px 10px rgba(18,91,149,0.06);}
     .stDownloadButton button {background:#125b95; color:white; border-radius:8px;}
     .stButton button {border-radius:999px; font-weight:600;}
     [data-testid="stProgress"] > div > div {background-color:#125b95;}
