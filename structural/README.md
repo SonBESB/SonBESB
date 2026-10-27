@@ -52,9 +52,11 @@ archivos; un servidor estático es solo la forma más portable de probarlo.)
    barra, y la tensión de von Mises máxima global con su ubicación.
 8. Panel "Mostrar": activa/desactiva los diagramas de M(x), V(x), N(x), la
    deformada (escala automática) y el mapa de von Mises sobre cada barra.
-9. "Verificación (opcional)": ingresa una tensión admisible/fluencia (MPa)
-   para obtener un factor de seguridad PASA/NO PASA contra el von Mises
-   máximo.
+9. **Diseño (AISC 360, LRFD)**: ingresa Fy (tensión de fluencia del
+   acero, MPa) para que el panel de resultados muestre, por cada barra, el
+   DCR (demanda/capacidad) de tracción/compresión, flexión, corte e
+   interacción flexo-compresión, con PASA/NO PASA — ver sección propia
+   abajo para el alcance real y lo que NO verifica.
 
 Rueda del mouse = zoom centrado en el cursor. "Ajustar vista" reencuadra
 la vista a los nodos actuales (la vista no se reajusta sola en cada clic,
@@ -94,14 +96,59 @@ Si abres `index.html` directamente con `file://`, el catálogo no cargará
 (los navegadores bloquean `fetch()` de JSON local sin servidor) — corre
 un servidor local como se indica arriba.
 
+## Diseño (AISC 360, LRFD)
+
+Chequeo de capacidad por barra (no solo análisis elástico): tracción
+(D2a), compresión con pandeo flexural (E3), flexión, corte (G2) e
+interacción flexo-compresión (H1-1a/b), con factores φ = 0.90 (LRFD). El
+panel de resultados y la memoria de cálculo muestran, por barra, el DCR
+(demanda/capacidad) en el punto más solicitado, cuál chequeo gobierna, y
+el desglose axial/flexión/corte.
+
+**Por qué AISC 360 y no "NCh427" a secas:** se buscó confirmar el texto
+oficial de NCh427 (factores φ, combinaciones) y no se pudo acceder a él
+desde este entorno — solo se encontraron referencias de que NCh427/1
+se apoya en AISC 360-16 para sus ejemplos de aplicación, no una
+confirmación de que sus φ sean idénticos. Por eso el chequeo se etiqueta
+como AISC 360, cuyas ecuaciones sí se verificaron cruzando varias fuentes
+técnicas independientes (ver cabecera de `js/design.js` para el detalle
+y `tests/validation_design.js` para la verificación numérica). Si tienes
+el texto oficial del INN con una tabla de φ distinta, o las combinaciones
+de carga chilenas (NCh3171 / NCh433 si hay sismo), avísalo para ajustarlo.
+
+**Qué NO calcula (limitaciones reales, no solo teóricas):**
+
+- **Sin momento plástico Mp**: la flexión se verifica solo contra
+  fluencia elástica (Mn = Fy·Sx). El catálogo ICHA no trae el módulo
+  plástico Zx, así que no se puede calcular Mp = Fy·Zx. Es conservador
+  (Sx ≤ Zx siempre), no un error, pero no es lo que haría un software de
+  diseño completo para secciones compactas.
+- **Sin pandeo lateral-torsional** (AISC F2/F3): necesita la constante de
+  alabeo Cw, que tampoco está en el catálogo. Si una barra flectada tiene
+  un tramo largo sin arriostrar, **esto no está verificado** — revisar
+  aparte.
+- **Sin pandeo flexo-torsional** (AISC E4) para perfiles no doblemente
+  simétricos (familias C, CA, T del catálogo): el DCR de compresión en
+  esos perfiles puede ser optimista. Se marca con "(¹)" en la tabla.
+- **K=1 y longitud sin arriostrar = largo de la barra**, igual en ambos
+  ejes: no hay forma de modelar arriostramientos intermedios en el
+  modelo actual.
+- **Un solo caso de carga**, sin combinaciones (1.2D+1.6L, etc.): si
+  quieres verificar cargas ya mayoradas, ingrésalas directamente como
+  cargas puntuales/distribuidas (la herramienta no las calcula por ti).
+- Solo disponible para secciones con geometría real (rectangular sólida,
+  circular sólida, o catálogo de perfiles) — sección "manual" (A/I/c
+  directos) no tiene suficiente geometría y se omite, igual que ya pasa
+  con el cálculo de corte en `stress.js`.
+
 ## Memoria de cálculo
 
 Tras "Calcular", el botón "Memoria de cálculo" abre una vista imprimible
 con: datos de proyecto (editables: nombre, autor, notas), descripción del
 modelo (nodos, barras con su sección/material, cargas), un resumen breve
 de la metodología, resultados (reacciones, máximos por barra con sus
-diagramas M(x)/V(x), von Mises máximo con ubicación) y la verificación
-contra la tensión admisible si se especificó una.
+diagramas M(x)/V(x), von Mises máximo con ubicación) y el chequeo de
+diseño AISC 360 por barra si se ingresó Fy (ver sección "Diseño" arriba).
 
 Usa Ctrl/Cmd+P o el botón "Imprimir / Guardar PDF" para exportar. **Si
 estás viendo la app como un Artifact de Claude, ese botón no va a
@@ -164,9 +211,10 @@ Ver `js/units.js` para la conversión exacta.
   pórticos/vigas vía método matricial es un problema bien acotado; un FEM
   de geometría arbitraria con mallado es un proyecto distinto y mucho
   mayor.
-- Verificación normativa (AISC, Eurocódigo, NCh, etc.) — el factor de
-  seguridad opcional es una comparación directa σ_adm/σ_vm, no un check
-  de norma.
+- Verificación normativa más allá de AISC 360 (Eurocódigo, NCh verificado
+  contra el texto oficial, etc.) — ver sección "Diseño" para el alcance
+  real y lo que NO cubre el chequeo AISC 360 implementado (sin Mp, sin
+  pandeo lateral-torsional ni flexo-torsional, sin combinaciones de carga).
 
 ## Validación
 
@@ -199,6 +247,17 @@ axial N(x) recuperada en la post-proceso, y otro en el vector de carga
 equivalente de la carga distribuida uniforme (ambos ya corregidos y
 cubiertos por los casos de arriba).
 
+El módulo de diseño AISC 360 (`js/design.js`) tiene su propia suite,
+separada porque no hay un ejemplo numérico oficial de AISC verificado
+contra el que comparar (ver la sección "Diseño" arriba) — en su lugar
+valida invariantes de las propias fórmulas (continuidad E3, casos límite
+triviales de H1) y una integración completa contra el caso ya validado
+de la viga simplemente apoyada:
+
+```bash
+node structural/tests/validation_design.js
+```
+
 ## Estructura de archivos
 
 ```
@@ -212,6 +271,7 @@ structural/
     frameElement.js          matriz de rigidez local/global, carga equivalente UDL
     solver.js                ensamblaje, condiciones de borde, fuerzas internas, deflexion
     stress.js                tension normal/corte/von Mises (Jourawski)
+    design.js                 chequeo de diseno AISC 360 LRFD (traccion/compresion/flexion/corte/interaccion)
     render.js                vista (pan/zoom), dibujo de modelo y overlays de resultados
     catalog.js                carga/consulta del catalogo de perfiles (data/catalog_icha.json)
     memoria.js                genera el HTML de la memoria de calculo imprimible
@@ -220,7 +280,8 @@ structural/
     catalog_icha.json         429 perfiles reales verificados (ver seccion "Catalogo de perfiles")
     catalog_icha_excluidos.json  filas descartadas por inconsistencia, con el motivo
   tests/
-    validation.js            suite de validacion (node structural/tests/validation.js)
+    validation.js            suite de validacion del nucleo de calculo
+    validation_design.js      suite de validacion del modulo de diseno AISC 360
 ```
 
 ## Limitaciones conocidas de la UI (no del cálculo)

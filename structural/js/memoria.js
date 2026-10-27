@@ -39,7 +39,7 @@
    * en el DOM antes de poder tomar getContext('2d') de los canvas).
    */
   function generate(ctx) {
-    var model = ctx.model, lr = ctx.lastResult, meta = ctx.meta, allowable = ctx.allowableStress;
+    var model = ctx.model, lr = ctx.lastResult, meta = ctx.meta, designFy = ctx.designFy;
     var Units = FEM.Units;
     var diagrams = [];
 
@@ -146,14 +146,30 @@
     }
     html += '</p>';
 
-    if (allowable > 0) {
-      var fs = allowable / lr.globalMax.vonMises;
-      html += '<h3 style="font-size:13px">3.4 Verificación</h3>' +
-        '<p>Tensión admisible/fluencia especificada: ' + allowable.toFixed(1) + ' MPa.<br>' +
-        'Factor de seguridad FS = σ_adm / σ_vm,máx = ' + fs.toFixed(2) + ' — ' +
-        '<b>' + (fs >= 1 ? 'CUMPLE' : 'NO CUMPLE') + '</b>.</p>' +
-        '<p class="note">Esta verificación es una comparación directa σ_adm/σ_vm, no un chequeo de norma ' +
-        '(AISC, NCh, Eurocódigo, etc.).</p>';
+    if (designFy > 0 && FEM.Design) {
+      html += '<h3 style="font-size:13px">3.4 Diseño (AISC 360, LRFD, Fy=' + designFy.toFixed(0) + ' MPa)</h3>';
+      html += '<table><tr><th>Barra</th><th>DCR</th><th>Gobierna</th><th>Axial</th><th>Flexión</th><th>Corte</th><th>Estado</th></tr>';
+      var anyNonDoublySym = false;
+      model.elements.forEach(function (el) {
+        var ef = lr.result.elementForces.get(el.id);
+        var chk = FEM.Design.checkMember(el, ef, FEM.solver, designFy, el.E);
+        if (!chk.available) {
+          html += '<tr><td>#' + el.id + '</td><td colspan="6">' + chk.reason + '</td></tr>';
+          return;
+        }
+        if (chk.nonDoublySymmetric) anyNonDoublySym = true;
+        var w = chk.worst;
+        html += '<tr><td>#' + el.id + (chk.nonDoublySymmetric ? ' (¹)' : '') + '</td><td>' + w.dcr.toFixed(2) + '</td><td>' +
+          w.governing + '</td><td>' + w.interaction.axialRatio.toFixed(2) + '</td><td>' +
+          w.interaction.flexRatio.toFixed(2) + '</td><td>' + w.shearRatio.toFixed(2) + '</td><td>' +
+          (w.dcr <= 1 ? 'PASA' : 'NO PASA') + '</td></tr>';
+      });
+      html += '</table>';
+      html += '<p class="note">DCR = demanda/capacidad en el punto más solicitado de cada barra (≤1 pasa). ' +
+        'Tracción (D2), compresión con pandeo flexural (E3), flexión elástica sin momento plástico ni ' +
+        'pandeo lateral-torsional (ver README), corte (G2), interacción flexo-compresión (H1). ' +
+        'Ecuaciones AISC 360 LRFD — no es NCh427 verificado contra el texto oficial del INN.' +
+        (anyNonDoublySym ? ' (¹) Perfil no doblemente simétrico: no se verifica pandeo flexo-torsional.' : '') + '</p>';
     }
 
     html += '<p class="note" style="margin-top:30px">Generado automáticamente el ' + new Date().toLocaleString('es-CL') +

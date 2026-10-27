@@ -700,11 +700,11 @@
     }
     html += '</p>';
 
-    var allowable = parseFloat(document.getElementById('allowableStress').value);
-    if (allowable > 0) {
-      var fs = allowable / lr.globalMax.vonMises;
-      html += '<p>Tensión admisible: ' + allowable.toFixed(1) + ' MPa — FS = ' + fs.toFixed(2) +
-        ' <span class="' + (fs >= 1 ? 'pass">PASA' : 'fail">NO PASA') + '</span></p>';
+    var Fy = parseFloat(document.getElementById('designFy').value);
+    if (Fy > 0) {
+      html += renderDesignSection(lr, Fy);
+    } else {
+      html += '<p class="muted">Ingresa Fy en el panel "Diseño" (abajo) para ver el chequeo AISC 360 por barra.</p>';
     }
 
     resultsPanel.innerHTML = html;
@@ -722,6 +722,48 @@
       drawMiniDiagram(document.getElementById('diagM_' + el.id), pointsM, '#4fd27a', 'kN·m');
       drawMiniDiagram(document.getElementById('diagV_' + el.id), pointsV, '#4fb8ff', 'kN');
     });
+  }
+
+  /**
+   * Reporte de diseño por barra (AISC 360 LRFD, ver js/design.js para
+   * alcance y limitaciones). Muestra el DCR (demand/capacity ratio) peor
+   * caso de cada barra, cuál chequeo gobierna, y el desglose axial/
+   * flexión/corte en ese punto — para que se entienda "por qué" pasa o no.
+   */
+  function renderDesignSection(lr, Fy) {
+    var html = '<h3 style="font-size:12px;color:#8b949e;margin:10px 0 4px">Diseño (AISC 360, LRFD, Fy=' +
+      Fy.toFixed(0) + ' MPa)</h3>';
+    html += '<table class="results-table"><tr><th>Barra</th><th>DCR</th><th>Gobierna</th><th>Axial</th><th>Flexión</th><th>Corte</th><th></th></tr>';
+
+    state.model.elements.forEach(function (el) {
+      var ef = lr.result.elementForces.get(el.id);
+      var chk = FEM.Design.checkMember(el, ef, FEM.solver, Fy, el.E);
+      if (!chk.available) {
+        html += '<tr><td>#' + el.id + '</td><td colspan="6" class="muted">' + chk.reason + '</td></tr>';
+        return;
+      }
+      var w = chk.worst;
+      var dcr = w.dcr;
+      var statusClass = dcr <= 1 ? 'pass' : 'fail';
+      var statusText = dcr <= 1 ? 'PASA' : 'NO PASA';
+      html += '<tr><td>#' + el.id + (chk.nonDoublySymmetric ? ' <span class="muted">(¹)</span>' : '') + '</td>' +
+        '<td><div style="display:flex;align-items:center;gap:6px">' +
+        '<div style="flex:1;height:8px;background:#2a313c;border-radius:4px;overflow:hidden">' +
+        '<div style="height:100%;width:' + Math.min(100, dcr * 100).toFixed(0) + '%;background:' +
+        (dcr <= 1 ? '#3fb950' : '#e5534b') + '"></div></div>' +
+        '<span>' + dcr.toFixed(2) + '</span></div></td>' +
+        '<td>' + w.governing + '</td>' +
+        '<td>' + w.interaction.axialRatio.toFixed(2) + '</td>' +
+        '<td>' + w.interaction.flexRatio.toFixed(2) + '</td>' +
+        '<td>' + w.shearRatio.toFixed(2) + '</td>' +
+        '<td class="' + statusClass + '">' + statusText + '</td></tr>';
+    });
+    html += '</table>';
+    html += '<p class="muted">DCR = demanda/capacidad en el punto más solicitado de la barra (≤1 pasa). ' +
+      'Axial/Flexión/Corte son los sub-chequeos en ese mismo punto — el mayor es el que "Gobierna". ' +
+      'No incluye pandeo lateral-torsional ni momento plástico (ver README). ' +
+      '(¹) Perfil no doblemente simétrico: no se verifica pandeo flexo-torsional, el DCR de compresión puede ser optimista.</p>';
+    return html;
   }
 
   /**
@@ -774,7 +816,7 @@
     c.fillText('máx |' + maxAbs.toFixed(2) + '| ' + unit, w - padR, padT - 1);
   }
 
-  document.getElementById('allowableStress').addEventListener('input', function () {
+  document.getElementById('designFy').addEventListener('input', function () {
     if (state.lastResult) renderResultsPanel();
   });
 
@@ -787,12 +829,12 @@
   var memoriaBtn = document.getElementById('memoriaBtn');
 
   function renderMemoria() {
-    var allowable = parseFloat(document.getElementById('allowableStress').value) || 0;
+    var designFy = parseFloat(document.getElementById('designFy').value) || 0;
     var fecha = new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
     var result = FEM.Memoria.generate({
       model: state.model, lastResult: state.lastResult,
       meta: { proyecto: memoriaMeta.proyecto, autor: memoriaMeta.autor, fecha: fecha, notas: memoriaMeta.notas },
-      allowableStress: allowable
+      designFy: designFy
     });
 
     var formHtml = '<div class="no-print" style="background:#f0f0f0;border:1px solid #ccc;border-radius:6px;padding:10px;margin-bottom:16px">' +
