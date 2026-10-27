@@ -39,7 +39,30 @@ from core.hydraulics.surge import PIPE_ELASTIC_MODULUS_PA, WATER_BULK_MODULUS_PA
 from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system
 from core.hydraulics.velocity_check import DEFAULT_MAX_VELOCITY_M_S, DEFAULT_MIN_VELOCITY_M_S, check_velocity
 
-_DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadratica (grado 2)": 2, "Cubica (grado 3)": 3}
+_DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadrática (grado 2)": 2, "Cúbica (grado 3)": 3}
+_STEP_MARKS = ["①", "②", "③", "④", "⑤", "⑥"]
+
+
+def _render_stepper(stages: list[str], key: str = "nav_stage") -> str:
+    """Asistente visual clicable: barra de progreso + botones con check en
+    los pasos ya recorridos. Reemplaza los radio buttons planos."""
+    current = st.session_state.setdefault(key, stages[0])
+    current_index = stages.index(current) if current in stages else 0
+
+    def jump_to(i: int) -> None:
+        st.session_state[key] = stages[i]
+
+    st.progress(current_index / (len(stages) - 1) if len(stages) > 1 else 1.0)
+    cols = st.columns(len(stages))
+    for i, (col, label) in enumerate(zip(cols, stages)):
+        text = label.split("·", 1)[1].strip() if "·" in label else label
+        mark = "✅" if i < current_index else _STEP_MARKS[i] if i < len(_STEP_MARKS) else str(i + 1)
+        col.button(
+            f"{mark} {text}", key=f"stepper_{key}_{i}", on_click=jump_to, args=(i,),
+            type="primary" if i == current_index else "secondary", use_container_width=True,
+        )
+    return stages[current_index]
+
 
 
 def render_pump_operating_point_tab() -> None:
@@ -49,7 +72,7 @@ def render_pump_operating_point_tab() -> None:
             st.session_state[key] = st.session_state[key]
     st.text_input("Nombre del proyecto / caso", value="Mi sistema de bombeo", key="pump_project_name", max_chars=120)
     stages = ["1 · Líquido", "2 · Tuberías", "3 · Bomba", "4 · Resultados"]
-    stage = st.radio("Comienza por el paso 1 y avanza con los botones Continuar", stages, horizontal=True, key="nav_stage")
+    stage = _render_stepper(stages, key="nav_stage")
     st.caption("Los valores iniciales son un ejemplo. Reemplázalos por los de tu instalación. Los cálculos se actualizan al cambiar un dato.")
     def go_stage(index):
         st.session_state.nav_stage = stages[index]
@@ -273,7 +296,19 @@ def render_pump_operating_point_tab() -> None:
                             "Convergio": ev.friction_converged,
                         }
                     )
-                st.dataframe(rows, use_container_width=True, hide_index=True)
+                st.caption(
+                    "**v OK?**: velocidad dentro (OK) o fuera (BAJA/ALTA) del rango de arriba. "
+                    "**Regimen**: cómo se mueve el fluido — *turbulento* es lo normal en la mayoría de líneas de impulsión; "
+                    "*laminar* es movimiento ordenado (típico solo a muy baja velocidad); *transicional* es una zona "
+                    "intermedia donde ninguna fórmula de fricción es del todo confiable."
+                )
+                show_technical = st.checkbox(
+                    "Mostrar columnas técnicas (Reynolds, factor de fricción f, ΣK, convergencia)",
+                    value=False, key="pump_tech_detail",
+                )
+                simple_columns = ["Tramo", "L (m)", "DI (mm)", "Tubería", "Clase", "v (m/s)", "v OK?", "Regimen", "hf (m)", "hs (m)"]
+                display_rows = rows if show_technical else [{k: r[k] for k in simple_columns} for r in rows]
+                st.dataframe(display_rows, use_container_width=True, hide_index=True)
                 for ev in detail.segment_evaluations:
                     if not ev.friction_converged or ev.regime.value == "transicional":
                         st.warning(f"{ev.label}: {ev.friction_note}")
