@@ -1,0 +1,266 @@
+[
+ {
+  "row": {
+   "family": "IN",
+   "familyLabel": "Viga soldada IN",
+   "H_cm": 80.0,
+   "B_mm": 350.0,
+   "e_mm": 22.0,
+   "t_mm": 10.0,
+   "weight_kgf_m": 180.0,
+   "A_cm2": 230.0,
+   "Ixx_cm4": 269000.0,
+   "Wxx_cm3": 7630.0,
+   "ixx_cm": 34.2,
+   "Iyy_cm4": 15700.0,
+   "Wyy_cm3": 899.0,
+   "iyy_cm": 8.28,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=35.26cm vs H/2=40.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "IN",
+   "familyLabel": "Viga soldada IN",
+   "H_cm": 80.0,
+   "B_mm": 300.0,
+   "e_mm": 20.0,
+   "t_mm": 10.0,
+   "weight_kgf_m": 154.0,
+   "A_cm2": 196.0,
+   "Ixx_cm4": 21900.0,
+   "Wxx_cm3": 5480.0,
+   "ixx_cm": 33.4,
+   "Iyy_cm4": 9010.0,
+   "Wyy_cm3": 600.0,
+   "iyy_cm": 6.78,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=4.00cm vs H/2=40.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "IN",
+   "familyLabel": "Viga soldada IN",
+   "H_cm": 70.0,
+   "B_mm": 350.0,
+   "e_mm": 28.0,
+   "t_mm": 8.0,
+   "weight_kgf_m": 194.0,
+   "A_cm2": 248.0,
+   "Ixx_cm4": 239000.0,
+   "Wxx_cm3": 68300.0,
+   "ixx_cm": 31.1,
+   "Iyy_cm4": 20000.0,
+   "Wyy_cm3": 1140.0,
+   "iyy_cm": 8.99,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=3.50cm vs H/2=35.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "IN",
+   "familyLabel": "Viga soldada IN",
+   "H_cm": 70.0,
+   "B_mm": 300.0,
+   "e_mm": 20.0,
+   "t_mm": 8.0,
+   "weight_kgf_m": 136.0,
+   "A_cm2": 173.0,
+   "Ixx_cm4": 158000.0,
+   "Wxx_cm3": 5410.0,
+   "ixx_cm": 30.2,
+   "Iyy_cm4": 9000.0,
+   "Wyy_cm3": 600.0,
+   "iyy_cm": 7.22,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=29.21cm vs H/2=35.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "IN",
+   "familyLabel": "Viga soldada IN",
+   "H_cm": 30.0,
+   "B_mm": 200.0,
+   "e_mm": 10.0,
+   "t_mm": 6.0,
+   "weight_kgf_m": 44.6,
+   "A_cm2": 56.8,
+   "Ixx_cm4": 95100.0,
+   "Wxx_cm3": 634.0,
+   "ixx_cm": 12.9,
+   "Iyy_cm4": 1330.0,
+   "Wyy_cm3": 133.0,
+   "iyy_cm": 4.85,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=150.00cm vs H/2=15.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "IN",
+   "familyLabel": "Viga soldada IN",
+   "H_cm": 30.0,
+   "B_mm": 150.0,
+   "e_mm": 12.0,
+   "t_mm": 6.0,
+   "weight_kgf_m": 41.3,
+   "A_cm2": 52.6,
+   "Ixx_cm4": 8520.0,
+   "Wxx_cm3": 268.0,
+   "ixx_cm": 12.7,
+   "Iyy_cm4": 675.0,
+   "Wyy_cm3": 90.1,
+   "iyy_cm": 3.58,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=31.79cm vs H/2=15.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "IN",
+   "familyLabel": "Viga soldada IN",
+   "H_cm": 30.0,
+   "B_mm": 150.0,
+   "e_mm": 10.0,
+   "t_mm": 6.0,
+   "weight_kgf_m": 36.7,
+   "A_cm2": 46.8,
+   "Ixx_cm4": 7410.0,
+   "Wxx_cm3": null,
+   "ixx_cm": 12.6,
+   "Iyy_cm4": 563.0,
+   "Wyy_cm3": 75.1,
+   "iyy_cm": 3.47,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "Wxx no numerico/invalido"
+  ]
+ },
+ {
+  "row": {
+   "family": "IP",
+   "familyLabel": "Viga soldada IP",
+   "H_cm": 80.0,
+   "B_mm": 350.0,
+   "e_mm": 35.0,
+   "t_mm": 14.0,
+   "weight_kgf_m": 273.0,
+   "A_cm2": 347.0,
+   "Ixx_cm4": 40400.0,
+   "Wxx_cm3": 10100.0,
+   "ixx_cm": 34.1,
+   "Iyy_cm4": 25000.0,
+   "Wyy_cm3": 1430.0,
+   "iyy_cm": 8.49,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=4.00cm vs H/2=40.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "IP",
+   "familyLabel": "Viga soldada IP",
+   "H_cm": 80.0,
+   "B_mm": 350.0,
+   "e_mm": 32.0,
+   "t_mm": 14.0,
+   "weight_kgf_m": 257.0,
+   "A_cm2": 327.0,
+   "Ixx_cm4": 37700.0,
+   "Wxx_cm3": 9430.0,
+   "ixx_cm": 34.0,
+   "Iyy_cm4": 22900.0,
+   "Wyy_cm3": 1310.0,
+   "iyy_cm": 8.36,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=4.00cm vs H/2=40.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "PH",
+   "familyLabel": "Pilote soldado PH",
+   "H_cm": 40.0,
+   "B_mm": 350.0,
+   "e_mm": 22.0,
+   "t_mm": 22.0,
+   "weight_kgf_m": 182.0,
+   "A_cm2": 232.0,
+   "Ixx_cm4": 63300.0,
+   "Wxx_cm3": 2170.0,
+   "ixx_cm": 16.4,
+   "Iyy_cm4": 15800.0,
+   "Wyy_cm3": 900.0,
+   "iyy_cm": 8.23,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "c=I/W=29.17cm vs H/2=20.00cm"
+  ]
+ },
+ {
+  "row": {
+   "family": "PH",
+   "familyLabel": "Pilote soldado PH",
+   "H_cm": 45.0,
+   "B_mm": 400.0,
+   "e_mm": 22.0,
+   "t_mm": 22.0,
+   "weight_kgf_m": 208.0,
+   "A_cm2": 365.0,
+   "Ixx_cm4": 92900.0,
+   "Wxx_cm3": 4130.0,
+   "ixx_cm": 18.7,
+   "Iyy_cm4": 23500.0,
+   "Wyy_cm3": 1180.0,
+   "iyy_cm": 9.41,
+   "checkSymmetry": true
+  },
+  "reasons": [
+   "peso inconsistente con A*densidad_acero (7850 kg/m3), posible error de transcripcion"
+  ]
+ },
+ {
+  "row": {
+   "family": "C",
+   "familyLabel": "Canal plegada C (alas no atiesadas)",
+   "H_cm": 15.0,
+   "B_mm": 50.0,
+   "e_mm": 3.5,
+   "t_mm": null,
+   "weight_kgf_m": 9.55,
+   "A_cm2": 8.35,
+   "Ixx_cm4": 264.0,
+   "Wxx_cm3": 35.2,
+   "ixx_cm": 5.63,
+   "Iyy_cm4": 18.2,
+   "Wyy_cm3": 4.74,
+   "iyy_cm": 1.48,
+   "checkSymmetry": false
+  },
+  "reasons": [
+   "peso inconsistente con A*densidad_acero (7850 kg/m3), posible error de transcripcion"
+  ]
+ }
+]
