@@ -170,3 +170,40 @@ Selector por clase y referencia, presion admisible por temperatura para agua,
 espesor para golpe de ariete y procedencia exportada. Ver
 [PEXGOL_CATALOG.md](PEXGOL_CATALOG.md) para alcance y 26 discrepancias.
 Datos pendientes de revision humana; resultados preliminares.
+
+## Libreria de calculos guardados (Supabase)
+
+Modulo `core/hydraulics/pumping_library.py`. Persiste casos (el mismo
+JSON que ya genera "Descargar caso") en una tabla `pumping_cases` de un
+proyecto Supabase dedicado a BESB Piping — separado del proyecto
+Supabase de otra app del mismo usuario (finanzas personales), que ya
+tenia su propio esquema con autenticacion real.
+
+**Decision de diseno explicita (no es una limitacion encontrada despues,
+se eligio asi con el usuario):** la app no tiene login. La "privacidad"
+de la libreria es por posesion de un link (`?owner=<uuid>` en la URL),
+igual que compartir un documento "cualquiera con el enlace" — no es una
+cuenta protegida. Row Level Security esta activo en la tabla, pero su
+politica permite cualquier operacion a la key anonima (`using (true)`,
+`with check (true)`): RLS no puede verificar de quien es un owner_key
+sin autenticacion real, asi que no hay una regla de base de datos que
+impida a alguien con la key anonima leer todos los casos si conociera
+o adivinara un owner_key ajeno. La proteccion real es que el UUID es
+impredecible (122 bits de entropia), no una regla de acceso. Esto se
+declara en la UI, no se presenta como seguridad real.
+
+**Limitacion deliberada:** la libreria guarda y permite volver a
+descargar el JSON de un caso, pero NO reconstruye automaticamente los
+widgets del formulario (tramos, catalogo/SDR por tramo, accesorios,
+escenarios VDF, golpe de ariete por material) a partir de un caso
+guardado. El formulario tiene demasiadas claves de estado dependientes
+entre si (ej. `pump_hdpe_de_{tramo}_{sdr}`, `pump_fit_{tramo}_{pieza}`)
+para reconstruirlas con seguridad sin arriesgar una restauracion
+silenciosamente incorrecta — mejor no reconstruir el formulario que
+reconstruirlo mal. Retomar un caso antiguo significa descargar su JSON
+y volver a ingresar esos valores a mano.
+
+**Configuracion:** `SUPABASE_URL` / `SUPABASE_ANON_KEY` en
+`st.secrets` (ver README). Sin esas credenciales, la seccion de
+libreria se deshabilita con un aviso — el resto de la calculadora
+sigue funcionando igual.

@@ -111,6 +111,25 @@ python main.py
 # equivalente a: streamlit run ui/app_streamlit.py
 ```
 
+### Libreria de calculos (opcional, Supabase)
+
+La pestaña de bombeo incluye una "libreria" para guardar casos y volver
+a descargarlos despues, con privacidad por link personal (sin login,
+ver `docs/HYDRAULICS_PUMP_OPERATING_POINT.md`). Es opcional: sin
+configurarla, el resto de la calculadora funciona igual.
+
+Para activarla, crea `.streamlit/secrets.toml` (no se versiona) con:
+
+```toml
+SUPABASE_URL = "https://<tu-proyecto>.supabase.co"
+SUPABASE_ANON_KEY = "<tu-anon-o-publishable-key>"
+```
+
+En un despliegue (Streamlit Community Cloud u otro), configura las
+mismas dos claves en el gestor de secretos de la plataforma — no en el
+repositorio. El esquema de la tabla (`pumping_cases`) esta en
+`core/hydraulics/pumping_library.py`.
+
 ## Ejecutar los tests
 
 ```bash

@@ -23,6 +23,7 @@ import streamlit as st
 from core.hydraulics.energy_profile import illustrative_profile
 from core.hydraulics.hdpe_catalog import load_hdpe_catalog, hdpe_pressure_limit
 from core.hydraulics.calculation_report import build_calculation_pdf
+from core.hydraulics.pumping_library import delete_case, get_library_config, get_owner_key, list_cases, save_case
 import json
 from dataclasses import asdict
 from core.hydraulics.pipe_catalog import CLASSES, load_pexgol_catalog, catalog_provenance, allowed_pressure_bar
@@ -64,6 +65,60 @@ def _render_stepper(stages: list[str], key: str = "nav_stage") -> str:
     return stages[current_index]
 
 
+def _render_library_section(key_prefix: str) -> None:
+    config = get_library_config()
+    with st.expander("📚 Mi librería de cálculos guardados", expanded=False):
+        if config is None:
+            st.info(
+                "Librería no configurada en este despliegue (faltan credenciales de Supabase). "
+                "Puedes seguir usando la calculadora y descargar cada caso en PDF/JSON normalmente."
+            )
+            return
+
+        owner_key = get_owner_key()
+        st.caption(
+            "Privada por link, sin contraseña: cualquiera con la URL actual de tu navegador "
+            "(que ya incluye `?owner=...`) puede ver y borrar estos casos — no es una cuenta "
+            "protegida. Guarda/marca esta página como favorita para volver a tu librería."
+        )
+        st.code(f"?owner={owner_key}", language=None)
+
+        cases, error = list_cases(owner_key)
+        if error:
+            st.warning(error)
+            return
+        if not cases:
+            st.caption("Todavía no guardaste ningún caso — el botón está en el paso 4 (Resultados).")
+            return
+
+        for case_row in cases:
+            q = case_row.get("q_l_s")
+            h = case_row.get("h_m")
+            p = case_row.get("p_elec_kw")
+            created = str(case_row.get("created_at", ""))[:16].replace("T", " ")
+            summary = f"{case_row.get('project_name') or 'Sin nombre'} · {created}"
+            if q is not None and h is not None:
+                summary += f" · Q={q:.2f} L/s, H={h:.2f} m"
+                if p is not None:
+                    summary += f", P={p:.2f} kW"
+            col_a, col_b, col_c = st.columns([5, 2, 1])
+            col_a.markdown(summary)
+            col_b.download_button(
+                "Descargar JSON", data=json.dumps(case_row["case_json"], indent=2, ensure_ascii=False),
+                file_name=f"besb_piping_{case_row['id']}.json", mime="application/json",
+                key=f"{key_prefix}_lib_dl_{case_row['id']}",
+            )
+            if col_c.button("🗑️", key=f"{key_prefix}_lib_del_{case_row['id']}", help="Eliminar este caso"):
+                ok, message = delete_case(owner_key, case_row["id"])
+                (st.success if ok else st.error)(message)
+                st.rerun()
+        st.caption(
+            "Esta librería guarda y permite volver a descargar un caso — no reconstruye "
+            "automáticamente los tramos/catálogos/escenarios del formulario. Para retomar un "
+            "caso antiguo, descarga su JSON y vuelve a ingresar esos valores."
+        )
+
+
 
 def render_pump_operating_point_tab() -> None:
     with st.expander("📖 ¿Cómo se usa esta calculadora? (guía rápida)", expanded=False):
@@ -81,9 +136,14 @@ def render_pump_operating_point_tab() -> None:
             "Usa los botones de arriba (① Líquido, ② Tuberías...) para moverte entre pasos en cualquier "
             "momento — no hace falta llenarlos en orden ni completarlos todos de una vez."
         )
+    _render_library_section("pump")
     # Preserve controls while incomplete fluid fields temporarily stop rendering.
+    # Excludes button/download_button keys (fixed names, plus the "_lib_" family
+    # for the library's save/download/delete buttons) — Streamlit forbids
+    # self-assigning those "trigger" widgets' session_state.
+    _non_reassignable = {"pump_curve_editor", "pump_export", "pump_add_scenario", "pump_remove_scenario", "pump_pdf"}
     for key in list(st.session_state):
-        if key.startswith("pump_") and key not in {"pump_curve_editor", "pump_export", "pump_add_scenario", "pump_remove_scenario", "pump_pdf"}:
+        if key.startswith("pump_") and "_lib_" not in key and key not in _non_reassignable:
             st.session_state[key] = st.session_state[key]
     st.text_input("Nombre del proyecto / caso", value="Mi sistema de bombeo", key="pump_project_name", max_chars=120)
     stages = ["1 · Líquido", "2 · Tuberías", "3 · Bomba", "4 · Resultados"]
@@ -768,13 +828,22 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
         },
         "_aviso": "MODELO DE INGENIERÍA generado por BESB Piping (core/hydraulics/) — no reemplaza cálculo de proveedor ni norma de diseño del proyecto.",
     }
-    st.caption("Descarga los archivos a tu equipo. La aplicación pública no guarda un historial compartido.")
+    st.caption("Descarga los archivos a tu equipo, o guárdalos en tu librería personal más abajo (opcional, sin contraseña).")
     pdf = build_calculation_pdf(case, figure)
     st.download_button("Descargar memoria de cálculo (PDF)", data=pdf, file_name="BESB_Piping_memoria.pdf", mime="application/pdf", key="pump_pdf")
     st.download_button(
         "Descargar caso (JSON)", data=json.dumps(case, indent=2, ensure_ascii=False),
         file_name="punto_operacion_bombeo.json", mime="application/json", key=f"{key_prefix}_export",
     )
+
+    if get_library_config() is not None:
+        if st.button("💾 Guardar en mi librería", key=f"{key_prefix}_lib_save"):
+            owner_key = get_owner_key()
+            q_l_s = nominal["Q (L/s)"] if nominal else None
+            h_m = nominal["H (m)"] if nominal else None
+            p_elec_kw = nominal["P eléctrica (kW)"] if nominal else None
+            ok, message = save_case(owner_key, case["proyecto"], case, q_l_s, h_m, p_elec_kw)
+            (st.success if ok else st.error)(message)
 
 
 def _build_executive_summary(nominal, results, npsh_result, segments, velocity_checks=None, pressure_checks=None, surge_result=None) -> str:
