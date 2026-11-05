@@ -1,4 +1,4 @@
-"""Streamlit UI for the Piping Component Generator — HDPE segmented elbow.
+"""Streamlit UI for the BESB Piping — HDPE segmented elbow.
 
 This module only wires widgets to the domain layer
 (components/elbows/hdpe_segmented_elbow.py) and renders the result. It
@@ -53,9 +53,10 @@ from plant3d.generators.custom_script_generator import generate_custom_script
 from ui.engineering_view import build_engineering_figure
 from ui.plotly_view import build_elbow_figure
 from ui.plotly_view3d import build_elbow_figure_3d
+from ui.pump_operating_view import render_pump_operating_point_tab
 from ui.results_view import build_result_rows
 
-st.set_page_config(page_title="Piping Component Generator", layout="wide")
+st.set_page_config(page_title="BESB Piping", layout="wide", page_icon="💧")
 
 
 @st.cache_resource
@@ -633,7 +634,7 @@ def render_plant3d_section(repository: ElbowRepository) -> None:
 
 
 def main() -> None:
-    st.title("Piping Component Generator — V0.3")
+    st.title("BESB Piping — V0.3")
     st.caption(
         "Codo HDPE segmentado PE100 (DIN 16963), con motor geometrico 3D real "
         "(gajos + planos a inglete). Independiente de AutoCAD Plant 3D."
@@ -641,8 +642,8 @@ def main() -> None:
 
     repository = get_repository()
 
-    tab_normalized, tab_custom, tab_engineering = st.tabs(
-        ["Modo A — Normalizado", "Modo B — Personalizado", "Modo C — Ingenieria"]
+    tab_normalized, tab_custom, tab_engineering, tab_pumping = st.tabs(
+        ["Modo A — Normalizado", "Modo B — Personalizado", "Modo C — Ingenieria", "Bombeo — Punto de Operacion"]
     )
     with tab_normalized:
         render_normalized_tab(repository)
@@ -654,10 +655,42 @@ def main() -> None:
             "(edicion avanzada por segmento, puertos y propiedades Plant 3D). "
             "No implementado todavia."
         )
+    with tab_pumping:
+        render_pump_operating_point_tab()
 
     render_available_libraries()
     render_plant3d_section(repository)
 
 
+def pumping_main() -> None:
+    st.markdown("""<style>
+    [data-testid="stAppViewContainer"] {background:linear-gradient(180deg,#eef4fb 0%,#e4edf9 55%,#dbe8f6 100%); background-attachment:fixed;}
+    .block-container {max-width:1100px; padding-top:1.5rem;}
+    h1 {letter-spacing:-0.035em;}
+    [data-testid="stMetric"] {background:#edf5fc; border:1px solid #d2e4f3; border-radius:12px; padding:14px;}
+    [data-testid="stMetricValue"] {color:#125b95;}
+    [data-testid="stExpander"] {border-radius:12px; background:#ffffff; border:1px solid #dce8f2; box-shadow:0 2px 10px rgba(18,91,149,0.06);}
+    .stDownloadButton button {background:#125b95; color:white; border-radius:8px;}
+    .stButton button {border-radius:999px; font-weight:600;}
+    [data-testid="stProgress"] > div > div {background-color:#125b95;}
+    [data-testid="stLatex"], .katex-display {overflow-x:auto; overflow-y:hidden; max-width:100%;}
+    .besb-brand {display:flex; align-items:baseline; gap:.4rem; margin-bottom:.1rem;}
+    .besb-brand .mark {font-size:2.1rem; font-weight:800; color:#0e3a5f; letter-spacing:-0.03em;}
+    .besb-brand .sub {font-size:1.3rem; font-weight:400; color:#125b95;}
+    .besb-accent {height:4px; width:64px; background:linear-gradient(90deg,#125b95,#4fa3e3); border-radius:999px; margin:.3rem 0 1rem 0;}
+    @media (max-width: 640px) {
+        .block-container {padding-left:0.8rem; padding-right:0.8rem;}
+        .besb-brand .mark {font-size:1.6rem;}
+        .besb-brand .sub {font-size:1rem;}
+        .stButton button {font-size:0.78rem; padding:0.3rem 0.4rem;}
+    }
+    </style>""", unsafe_allow_html=True)
+    st.markdown('<div class="besb-brand"><span class="mark">BESB</span><span class="sub">Piping</span></div><div class="besb-accent"></div>', unsafe_allow_html=True)
+    st.markdown("**Calculadora de bombeo**")
+    render_pump_operating_point_tab()
+    with st.expander("Acerca de los cálculos y sus límites"):
+        st.write("Estimación de ingeniería para tramos en serie. Revisa los resultados con los datos del fabricante y los criterios de tu proyecto. Los accesorios usan coeficientes genéricos; el catálogo PEXGOL está pendiente de revisión humana.")
+
+
 if __name__ == "__main__":
-    main()
+    pumping_main()

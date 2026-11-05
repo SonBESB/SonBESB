@@ -56,10 +56,11 @@ def test_provenance_reaches_the_json_export():
     assert provenance["table"] == "6.1.1"
 
 
-def test_three_reference_sources_are_registered_not_digitized_except_hdpe():
+def test_reference_sources_distinguish_registration_and_partial_transcription():
     keys = {s.key for s in REGISTERED_SOURCES}
-    assert keys == {"hdpe_catalog", "codelco_support_standard", "hipogeno_support_standard"}
+    assert keys == {"hdpe_catalog", "codelco_support_standard", "hipogeno_support_standard", "pexgol_catalog"}
 
+    assert get_data_source("pexgol_catalog").status is DataSourceStatus.PARTIALLY_DIGITIZED
     assert get_data_source("hdpe_catalog").status is DataSourceStatus.PARTIALLY_DIGITIZED
     assert get_data_source("codelco_support_standard").status is DataSourceStatus.REGISTERED_NOT_DIGITIZED
     assert get_data_source("hipogeno_support_standard").status is DataSourceStatus.REGISTERED_NOT_DIGITIZED

@@ -1,4 +1,4 @@
-# Piping Component Generator — V0.3
+# BESB Piping — V0.3
 
 Generador de componentes parametricos de piping para preparar, en etapas
 futuras, su exportacion a AutoCAD Plant 3D. Esta aplicacion es
@@ -86,6 +86,15 @@ mantiene como caso de regresion/escalabilidad.
   **`PLANT3D_PACKAGE_READY_FOR_VALIDATION`** — nunca `PLANT3D_VALIDATED`
   sin una prueba real en una maquina Windows con Plant 3D instalado (ver
   `docs/PLANT3D_MODEL_ACCEPTANCE.md`).
+- **Bombeo — Punto de Operacion** (`core/hydraulics/`, pestaña propia en
+  la UI): modulo independiente del codo HDPE, para el caudal de
+  equilibrio entre una curva de bomba y una curva de sistema (tramos en
+  serie + accesorios). Factor de friccion por Colebrook-White real
+  (viscosidad explicita, no agua fija), ajuste de curva por regresion
+  (no interpolacion lineal de 3 puntos), leyes de afinidad con
+  eficiencia trasladada por punto, y verificacion NPSH disponible vs
+  requerido con margen de seguridad. Metodologia, fuentes y
+  limitaciones conocidas en `docs/HYDRAULICS_PUMP_OPERATING_POINT.md`.
 
 ## Instalacion
 
@@ -101,6 +110,25 @@ pip install -r requirements-cad.txt
 python main.py
 # equivalente a: streamlit run ui/app_streamlit.py
 ```
+
+### Libreria de calculos (opcional, Supabase)
+
+La pestaña de bombeo incluye una "libreria" para guardar casos y volver
+a descargarlos despues, con privacidad por link personal (sin login,
+ver `docs/HYDRAULICS_PUMP_OPERATING_POINT.md`). Es opcional: sin
+configurarla, el resto de la calculadora funciona igual.
+
+Para activarla, crea `.streamlit/secrets.toml` (no se versiona) con:
+
+```toml
+SUPABASE_URL = "https://<tu-proyecto>.supabase.co"
+SUPABASE_ANON_KEY = "<tu-anon-o-publishable-key>"
+```
+
+En un despliegue (Streamlit Community Cloud u otro), configura las
+mismas dos claves en el gestor de secretos de la plataforma — no en el
+repositorio. El esquema de la tabla (`pumping_cases`) esta en
+`core/hydraulics/pumping_library.py`.
 
 ## Ejecutar los tests
 
@@ -164,8 +192,10 @@ piping-component-generator/
     plant3d_validation/        # V0.3: evidencia real por etapa (vacia/plantilla hasta prueba manual)
     dist/plant3d/               # V0.3: paquete de despliegue generado para el Golden Case
         HDPE_SEGMENTED_ELBOW/
+    core/hydraulics/           # Bombeo: friccion, curva de sistema/bomba, punto de operacion,
+                              # afinidad (VDF/gemelas), NPSH, potencia — independiente del codo
     ui/                       # Streamlit + Plotly (2D, 3D, vista de ingenieria, cabecera de libreria,
-                              # seccion Plant 3D)
+                              # seccion Plant 3D, pestaña Bombeo)
     tests/
     docs/                     # ver lista completa mas abajo
 ```
@@ -206,3 +236,7 @@ encabezados esperados) o ajusta el loader si cambia el layout.
   `docs/PLANT3D_CUSTOMSCRIPT.md`).
 - Otros tipos de componente (tees, reductores, flanges, valvulas,
   soportes, bombas).
+
+Catalogo PEXGOL 2023 disponible como borrador en la pestaña de bombeo: 170
+referencias, presion por temperatura para agua y exportacion con procedencia.
+Ver [alcance y discrepancias](docs/PEXGOL_CATALOG.md).

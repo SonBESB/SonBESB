@@ -1,11 +1,9 @@
 """Registry of documentary sources available to the project.
 
 Registering a source here means "this document exists and we know its
-metadata" — NOT "this document's tables are loaded". Only the HDPE
-catalog has any data actually flowing into the app today (via
-data/raw/*.xlsx, itself derived from this catalog's section 6.1 — see
-docs/DATA_NOTES.md); the other two are registered purely as available
-references, per the V0.2.2 instruction not to digitize them yet.
+metadata" — NOT "this document's tables are approved". HDPE has
+loaded data; PEXGOL has a partial draft transcription pending human review.
+The support standards remain documentary references only.
 """
 
 from __future__ import annotations
@@ -37,7 +35,9 @@ def _load_registered_sources() -> List[DataSourceMetadata]:
     from data_sources.hdpe_catalog import SOURCE as hdpe_source
     from data_sources.hipogeno_support_standard import SOURCE as hipogeno_source
 
-    return [hdpe_source, codelco_source, hipogeno_source]
+    from data_sources.pexgol_catalog import SOURCE as pexgol_source
+
+    return [hdpe_source, codelco_source, hipogeno_source, pexgol_source]
 
 
 REGISTERED_SOURCES: List[DataSourceMetadata] = _load_registered_sources()
