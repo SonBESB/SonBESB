@@ -6,6 +6,14 @@ depositos abiertos) pero cada punto de la curva se calcula con friccion
 real (Colebrook-White + viscosidad real, ver friction.py) en vez de
 Swamee-Jain con agua fija, y las perdidas singulares nunca quedan en 0
 por defecto ni se aplican con un factor arbitrario silencioso.
+
+PiezoCalc tambien ofrece un modo rapido para cuando todavia no se conoce
+el detalle de accesorios: estimar las perdidas singulares como un % de
+las perdidas por friccion del tramo, en vez de sumar K por pieza. Se
+porta aqui como `PipeSegment.minor_loss_fraction` (None = modo
+detallado por accesorio, el de siempre; un valor = modo porcentaje).
+Es una estimacion gruesa de anteproyecto, no un calculo de accesorios
+reales — se declara asi en la UI.
 """
 
 from __future__ import annotations
@@ -24,6 +32,7 @@ class PipeSegment:
     inside_diameter_mm: float
     roughness_mm: float
     fitting_counts: dict[str, int] = field(default_factory=dict)
+    minor_loss_fraction: float | None = None
 
     @property
     def inside_diameter_m(self) -> float:
@@ -65,7 +74,10 @@ def evaluate_segment(segment: PipeSegment, flow_m3_s: float, density_kg_m3: floa
     reynolds = reynolds_number(velocity, segment.inside_diameter_m, density_kg_m3, viscosity_pa_s)
     friction = colebrook_white(reynolds, segment.roughness_m, segment.inside_diameter_m)
     hf = darcy_weisbach_head_loss_m(velocity, segment.inside_diameter_m, segment.length_m, friction.friction_factor)
-    hs = minor_loss_head_m(velocity, segment.minor_loss_coefficient)
+    if segment.minor_loss_fraction is not None:
+        hs = segment.minor_loss_fraction * hf
+    else:
+        hs = minor_loss_head_m(velocity, segment.minor_loss_coefficient)
     return SegmentEvaluation(
         label=segment.label,
         flow_m3_s=flow_m3_s,

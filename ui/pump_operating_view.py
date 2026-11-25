@@ -44,6 +44,12 @@ _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadrática 
 _STEP_MARKS = ["①", "②", "③", "④", "⑤", "⑥"]
 
 
+def _sigma_k_display(seg: PipeSegment):
+    if seg.minor_loss_fraction is not None:
+        return f"{seg.minor_loss_fraction * 100:g}% de hf"
+    return seg.minor_loss_coefficient
+
+
 def _render_stepper(stages: list[str], key: str = "nav_stage") -> str:
     """Asistente visual clicable: barra de progreso + botones con check en
     los pasos ya recorridos. Reemplaza los radio buttons planos."""
@@ -205,7 +211,7 @@ def render_pump_operating_point_tab() -> None:
 
     with st.expander("Resumen de los datos ingresados", expanded=stage == stages[3]):
         st.write(f"{fluid.name} · {fluid.temperature_c:g} °C · Desnivel {static_head_m:g} m · {len(segments)} tramo(s) · {len(q_points)} puntos de bomba")
-        st.dataframe([{"Tramo": seg.label, "Longitud (m)": seg.length_m, "DI usado (mm)": seg.inside_diameter_mm, "ΣK": seg.minor_loss_coefficient} for seg in segments], hide_index=True)
+        st.dataframe([{"Tramo": seg.label, "Longitud (m)": seg.length_m, "DI usado (mm)": seg.inside_diameter_mm, "ΣK": _sigma_k_display(seg)} for seg in segments], hide_index=True)
     q_max_curve = max(q_points) / 1000.0
     flow_range = np.linspace(0.0, q_max_curve * 1.05, 60).tolist()
     system_points = build_system_curve(
@@ -364,7 +370,7 @@ def render_pump_operating_point_tab() -> None:
                         {
                             "Tramo": ev.label, "L (m)": seg.length_m, "DI (mm)": seg.inside_diameter_mm,
                             "Tubería": catalog_rows[i].get("material", "PEXGOL") if catalog_rows[i] else "Dimensiones manuales",
-                            "Clase": pn_labels[i], "ΣK": seg.minor_loss_coefficient,
+                            "Clase": pn_labels[i], "ΣK": _sigma_k_display(seg),
                             "v (m/s)": round(ev.velocity_m_s, 3), "v OK?": vcheck.status, "Re": f"{ev.reynolds:.3e}",
                             "Regimen": ev.regime.value, "f": round(ev.friction_factor, 4),
                             "hf (m)": round(ev.friction_head_loss_m, 3), "hs (m)": round(ev.minor_head_loss_m, 3),
@@ -516,18 +522,32 @@ def _render_segments_section(key_prefix: str, show_pressure_class: bool = True, 
             if show_pressure_class:
                 pn_labels.append(pn_label)
             catalog_rows.append(row)
+            minor_mode = st.radio(
+                "Pérdidas singulares (accesorios)", ["Detallar accesorios", "Aún no sé los accesorios — estimar como % de la fricción"],
+                key=f"{key_prefix}_minor_mode_{i}", horizontal=True,
+            )
             fitting_counts = {}
-            with st.expander("Piezas especiales · cantidades en este tramo"):
-                st.caption("Usa − y + para indicar la cantidad de cada pieza. K es un coeficiente genérico; no depende del fabricante ni del diámetro en esta tabla.")
-                fitting_columns = st.columns(2)
-                for j, (name, k) in enumerate(FITTING_K_TABLE.items()):
-                    count = fitting_columns[j % 2].number_input(f"{name} · K={k:g}", min_value=0, value=0, step=1, key=f"{key_prefix}_fit_{i}_{name}")
-                    if count:
-                        fitting_counts[name] = count
-                        if name in FITTING_K_DISCREPANCIES:
-                            st.caption(FITTING_K_DISCREPANCIES[name])
-            st.caption(f"Total de piezas: {sum(fitting_counts.values())} · ΣK = {sum(FITTING_K_TABLE[n]*c for n,c in fitting_counts.items()):.2f}")
-            segments.append(PipeSegment(label=f"Tramo {i + 1}", length_m=length, inside_diameter_mm=di, roughness_mm=roughness, fitting_counts=fitting_counts))
+            minor_loss_fraction = None
+            if minor_mode == "Detallar accesorios":
+                with st.expander("Piezas especiales · cantidades en este tramo"):
+                    st.caption("Usa − y + para indicar la cantidad de cada pieza. K es un coeficiente genérico; no depende del fabricante ni del diámetro en esta tabla.")
+                    fitting_columns = st.columns(2)
+                    for j, (name, k) in enumerate(FITTING_K_TABLE.items()):
+                        count = fitting_columns[j % 2].number_input(f"{name} · K={k:g}", min_value=0, value=0, step=1, key=f"{key_prefix}_fit_{i}_{name}")
+                        if count:
+                            fitting_counts[name] = count
+                            if name in FITTING_K_DISCREPANCIES:
+                                st.caption(FITTING_K_DISCREPANCIES[name])
+                st.caption(f"Total de piezas: {sum(fitting_counts.values())} · ΣK = {sum(FITTING_K_TABLE[n]*c for n,c in fitting_counts.items()):.2f}")
+            else:
+                pct = st.number_input(
+                    "Porcentaje sobre la pérdida por fricción del tramo (%)", min_value=0.0, max_value=200.0,
+                    value=10.0, step=1.0, key=f"{key_prefix}_minor_pct_{i}",
+                    help="Estimación gruesa de anteproyecto (la misma que ofrece PiezoCalc): hs = %×hf en vez de sumar K por accesorio real. Reemplázala por el detalle real apenas definas los accesorios.",
+                )
+                minor_loss_fraction = pct / 100.0
+                st.caption(f"Pérdidas singulares estimadas como {pct:g}% de la fricción de este tramo — NO es un cálculo por accesorio real.")
+            segments.append(PipeSegment(label=f"Tramo {i + 1}", length_m=length, inside_diameter_mm=di, roughness_mm=roughness, fitting_counts=fitting_counts, minor_loss_fraction=minor_loss_fraction))
             total_length += length
     if n_segments > 1:
         st.caption(f"Longitud total: {total_length:.2f} m")
@@ -799,6 +819,7 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
             {
                 "label": s.label, "longitud_m": s.length_m, "diametro_interior_mm": s.inside_diameter_mm,
                 "rugosidad_mm": s.roughness_mm, "accesorios": s.fitting_counts,
+                "perdidas_singulares_pct_friccion": (s.minor_loss_fraction * 100) if s.minor_loss_fraction is not None else None,
                 "clase_pn": pn_labels[i] if i < len(pn_labels) else None,
                 "catalogo": catalog_rows[i] if catalog_rows else None,
             }
