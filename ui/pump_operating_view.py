@@ -865,6 +865,13 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
             p_elec_kw = nominal["P eléctrica (kW)"] if nominal else None
             ok, message = save_case(owner_key, case["proyecto"], case, q_l_s, h_m, p_elec_kw)
             (st.success if ok else st.error)(message)
+    else:
+        st.caption(
+            "💾 \"Guardar en mi librería\" no aparece en este entorno porque faltan las "
+            "credenciales de Supabase (`SUPABASE_URL` / `SUPABASE_ANON_KEY` en secrets) — "
+            "normal en un Codespace o entorno local nuevo. Sí está disponible en el "
+            "despliegue donde configuraste esos secrets."
+        )
 
 
 def _build_executive_summary(nominal, results, npsh_result, segments, velocity_checks=None, pressure_checks=None, surge_result=None) -> str:
