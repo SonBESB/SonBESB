@@ -196,3 +196,23 @@ def test_build_system_curve_zero_flow_returns_static_head_only():
     segment = PipeSegment(label="Tramo 1", length_m=100, inside_diameter_mm=100, roughness_mm=0.01, fitting_counts={})
     curve = build_system_curve([segment], static_head_m=10.0, density_kg_m3=998.0, viscosity_pa_s=1.002e-3, flow_range_m3_s=[0.0])
     assert curve[0].total_head_m == pytest.approx(10.0)
+
+
+def test_minor_loss_fraction_mode_matches_pct_of_friction():
+    # Modo "no conozco los accesorios" de PiezoCalc: hs = pct * hf.
+    segment = PipeSegment(
+        label="Tramo 1", length_m=1250, inside_diameter_mm=250, roughness_mm=0.007,
+        fitting_counts={"Curva 90": 5}, minor_loss_fraction=0.10,
+    )
+    point = evaluate_system(
+        [segment], flow_m3_s=0.1035, static_head_m=18.5, density_kg_m3=998.0, viscosity_pa_s=1.002e-3
+    )
+    ev = point.segment_evaluations[0]
+    assert ev.minor_head_loss_m == pytest.approx(0.10 * ev.friction_head_loss_m)
+    # El modo porcentaje ignora fitting_counts aunque venga poblado por error.
+
+
+def test_minor_loss_fraction_none_keeps_itemized_behavior():
+    with_fittings = PipeSegment(label="T", length_m=100, inside_diameter_mm=100, roughness_mm=0.01, fitting_counts={"Curva 90": 2})
+    without_fraction = evaluate_system([with_fittings], 0.02, 0.0, 998.0, 1.002e-3).segment_evaluations[0]
+    assert without_fraction.minor_head_loss_m > 0
