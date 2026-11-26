@@ -24,6 +24,8 @@ from core.hydraulics.energy_profile import illustrative_profile
 from core.hydraulics.hdpe_catalog import load_hdpe_catalog, hdpe_pressure_limit
 from core.hydraulics.calculation_report import build_calculation_pdf
 from core.hydraulics.pumping_library import delete_case, get_library_config, get_owner_key, list_cases, save_case
+from core.hydraulics.requirements_import import build_session_state_updates, parse_requirements_csv
+import hashlib
 import json
 from dataclasses import asdict
 from core.hydraulics.pipe_catalog import CLASSES, load_pexgol_catalog, catalog_provenance, allowed_pressure_bar
@@ -69,6 +71,40 @@ def _render_stepper(stages: list[str], key: str = "nav_stage") -> str:
             type="primary" if i == current_index else "secondary", use_container_width=True,
         )
     return stages[current_index]
+
+
+def _render_requirements_import(key_prefix: str) -> None:
+    with st.expander("📥 Importar tabla de requisitos (CSV)", expanded=False):
+        st.caption(
+            "Sube un CSV de dos columnas (parámetro, valor) para rellenar automáticamente "
+            "fluido, desnivel geométrico, presiones de borde, el Tramo 1 (geometría manual y, "
+            "si corresponde, % de accesorios) y el caudal de diseño. **No** rellena accesorios "
+            "detallados por pieza, catálogo HDPE/PEXGOL, la curva de la bomba ni escenarios "
+            "VDF — eso sigue siendo manual a propósito, igual que al retomar un caso guardado "
+            "de la librería (ver docs/HYDRAULICS_PUMP_OPERATING_POINT.md)."
+        )
+        uploaded = st.file_uploader("Archivo CSV", type=["csv"], key=f"{key_prefix}_req_upload")
+        if uploaded is None:
+            return
+        content = uploaded.getvalue().decode("utf-8-sig", errors="replace")
+        file_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        applied_key = f"{key_prefix}_req_upload_applied_hash"
+        if st.session_state.get(applied_key) == file_hash:
+            st.caption("Ya se aplicó este archivo. Edita los campos abajo con confianza — no se va a volver a sobrescribir solo. Sube otro CSV para repetir la importación.")
+            return
+        parsed = parse_requirements_csv(content)
+        updates, applied, ignored = build_session_state_updates(parsed, key_prefix=key_prefix)
+        for key, value in updates.items():
+            st.session_state[key] = value
+        st.session_state[applied_key] = file_hash
+        if applied:
+            st.success("Importado: " + " · ".join(applied))
+        else:
+            st.warning("No se reconoció ningún parámetro en el archivo — revisa los nombres de columna/fila.")
+        if ignored:
+            with st.expander(f"{len(ignored)} parámetro(s) no importado(s) — ingrésalos a mano"):
+                for item in ignored:
+                    st.caption(f"• {item}")
 
 
 def _render_library_section(key_prefix: str) -> None:
@@ -143,11 +179,12 @@ def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
             "momento — no hace falta llenarlos en orden ni completarlos todos de una vez."
         )
     _render_library_section("pump")
+    _render_requirements_import("pump")
     # Preserve controls while incomplete fluid fields temporarily stop rendering.
     # Excludes button/download_button keys (fixed names, plus the "_lib_" family
     # for the library's save/download/delete buttons) — Streamlit forbids
     # self-assigning those "trigger" widgets' session_state.
-    _non_reassignable = {"pump_curve_editor", "pump_export", "pump_add_scenario", "pump_remove_scenario", "pump_pdf", "pump_demand_csv"}
+    _non_reassignable = {"pump_curve_editor", "pump_export", "pump_add_scenario", "pump_remove_scenario", "pump_pdf", "pump_demand_csv", "pump_req_upload"}
     for key in list(st.session_state):
         if key.startswith("pump_") and "_lib_" not in key and key not in _non_reassignable:
             st.session_state[key] = st.session_state[key]
