@@ -33,6 +33,36 @@ def test_profile_inlet_pressure_head_adds_to_entry_energy_without_a_pump():
     assert rows[-1]['presion_bar'] == pytest.approx(expected_bar)
 
 
+def test_profile_delivers_the_required_destination_pressure_with_a_real_pump():
+    # Verificacion end-to-end (requisito explicito del usuario, OT-120):
+    # con una bomba real en equilibrio, la presion residual fisica en el
+    # destino debe coincidir con la presion requerida que se uso para
+    # construir el "desnivel efectivo" -- en CUALQUIER caudal de equilibrio,
+    # no solo en el caudal de diseno, porque el ajuste de presion de borde
+    # es un offset de carga fijo, independiente del caudal.
+    from core.hydraulics.system_curve import build_system_curve, pressure_boundary_head_m
+    from core.hydraulics.curve_fit import fit_polynomial
+    from core.hydraulics.operating_point import solve_operating_point
+    import numpy as np
+
+    rho, mu = 998.2, 1.002e-3
+    desnivel_geometrico = 12.5
+    p_disp_bar, p_req_bar = 2.5, 1.5
+    static_head_effective = desnivel_geometrico + pressure_boundary_head_m(p_disp_bar, p_req_bar, rho)
+    seg = PipeSegment(label="Tramo 1", length_m=120.0, inside_diameter_mm=96.8, roughness_mm=0.0015, minor_loss_fraction=0.10)
+
+    fit = fit_polynomial([0.0, 0.003], [3.0, 2.0], 1)
+    flow_range = np.linspace(0, 0.0036, 60).tolist()
+    pts = build_system_curve([seg], static_head_effective, rho, mu, flow_range)
+    sysq, sysh = [p.flow_m3_s for p in pts], [p.total_head_m for p in pts]
+    op = solve_operating_point(lambda q: fit.evaluate(q), lambda q: float(np.interp(q, sysq, sysh)), q_min=0.0, q_max=0.0036)
+    assert op.found
+
+    inlet_head_m = pressure_to_head_m(p_disp_bar, rho)
+    rows = illustrative_profile([seg], op.flow_m3_s, op.head_m, desnivel_geometrico, rho, mu, inlet_pressure_head_m=inlet_head_m)
+    assert rows[-1]['presion_bar'] == pytest.approx(p_req_bar, abs=1e-3)
+
+
 def test_profile_energy_balance_and_velocity_step():
     segs = [PipeSegment('A',100,200,0.007),PipeSegment('B',150,150,0.007)]
     rows = illustrative_profile(segs,0.02,30,10,1000,0.001)
