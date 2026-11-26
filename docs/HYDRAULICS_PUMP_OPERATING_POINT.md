@@ -201,6 +201,28 @@ independientes y con una fuente fisica distinta cada uno (perdida por
 friccion, perdida/estimacion por accesorios, diferencia de presion de
 borde).
 
+**Bug encontrado y corregido tras revision externa (OT-120):** el "desnivel
+efectivo" de arriba es valido SOLO para resolver el punto de equilibrio
+bomba-sistema — nunca debe reutilizarse como si fuera la elevacion real en
+un calculo que dibuja un perfil de presion fisico. Las primeras versiones
+de `illustrative_profile` (perfil de energia) y `build_shutoff_pressure_profile`
+(presion vs PN en shutoff) recibian ese valor ya mezclado con la presion de
+borde en el parametro pensado para la elevacion geometrica, lo que producia
+una cota ficticia y, en el perfil ilustrativo, presiones negativas espurias
+que no reflejaban la instalacion real. Corregido: ambas funciones ahora
+reciben la elevacion geometrica real por separado y un nuevo parametro
+`inlet_pressure_head_m` con la carga de la presion real ya disponible en la
+succion (0.0 por defecto, sin cambio de comportamiento cuando no se usa
+presion de borde). Ver `pressure_to_head_m` en `system_curve.py` para la
+conversion bar -> m reutilizada en ambos lugares.
+
+Este mismo mecanismo (`inlet_pressure_head_m=0`, sin bomba) es el que
+calcula la "presion residual estimada en el destino" que se muestra en el
+modo sin bomba: toma la presion real de entrada, resta las perdidas y la
+elevacion real, y entrega la presion que efectivamente llegaria al destino
+sin ningun aporte de bomba — independiente de cualquier presion "requerida"
+que se haya ingresado como supuesto de diseño.
+
 ## Libreria de calculos guardados (Supabase)
 
 Modulo `core/hydraulics/pumping_library.py`. Persiste casos (el mismo

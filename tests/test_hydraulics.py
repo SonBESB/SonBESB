@@ -20,7 +20,7 @@ from core.hydraulics.minor_losses import minor_loss_head_m, total_minor_loss_coe
 from core.hydraulics.npsh import atmospheric_head_m, check_npsh, npsh_available, vapor_pressure_head_m
 from core.hydraulics.operating_point import solve_operating_point
 from core.hydraulics.power import compute_power
-from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system, pressure_boundary_head_m
+from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system, pressure_boundary_head_m, pressure_to_head_m
 
 
 def test_water_properties_matches_known_table_point():
@@ -196,6 +196,10 @@ def test_build_system_curve_zero_flow_returns_static_head_only():
     segment = PipeSegment(label="Tramo 1", length_m=100, inside_diameter_mm=100, roughness_mm=0.01, fitting_counts={})
     curve = build_system_curve([segment], static_head_m=10.0, density_kg_m3=998.0, viscosity_pa_s=1.002e-3, flow_range_m3_s=[0.0])
     assert curve[0].total_head_m == pytest.approx(10.0)
+
+
+def test_pressure_to_head_m_matches_hand_calc():
+    assert pressure_to_head_m(2.5, 998.2) == pytest.approx(2.5e5 / (998.2 * 9.80665))
 
 
 def test_pressure_boundary_head_m_is_zero_when_both_ends_are_open():
