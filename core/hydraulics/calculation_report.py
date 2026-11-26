@@ -112,8 +112,14 @@ def build_calculation_pdf(case, figure=None):
             for issue in cat.get('issues',[]):text(issue)
     heading('3. Curva de la bomba ingresada')
     curve=case['curva_bomba']
-    table(['Q (L/s)','H (m)','Eficiencia (%)'],[[p['Q_L_s'],p['H_m'],p['eta_pct']] for p in curve['puntos']],[160,165,165])
-    text('Ajuste por regresión, grado '+str(curve['grado_ajuste'])+'. Las eficiencias usadas en operación se indican en la siguiente tabla.')
+    if case.get('modo_sin_bomba'):
+        text('Sin bomba seleccionada todavía: esta memoria registra la demanda del sistema, no un punto de equilibrio con una curva de fabricante.')
+        q_diseno=case.get('caudal_diseno_l_s')
+        if q_diseno is not None:
+            text(f"Caudal de diseño: {q_diseno:.2f} L/s ({q_diseno*3.6:.3f} m³/h).")
+    else:
+        table(['Q (L/s)','H (m)','Eficiencia (%)'],[[p['Q_L_s'],p['H_m'],p['eta_pct']] for p in curve['puntos']],[160,165,165])
+        text('Ajuste por regresión, grado '+str(curve['grado_ajuste'])+'. Las eficiencias usadas en operación se indican en la siguiente tabla.')
     table(['Escenario','Eficiencia bomba (%)','P hidráulica (kW)','P al eje (kW)'],[[r['Escenario'],r.get('eta bomba (%)'),r.get('P hidraulica (kW)'),r.get('P eje (kW)')] for r in results],[145,115,115,115])
     table(['Configuración','N / N nominal','Bombas paralelo','Bombas serie'],[[r['label'],f"{r['phi']:.4f}",r['parallel_n'],r['series_n']] for r in case.get('configuracion_escenarios',[])],[160,110,110,110])
     story.append(PageBreak())
@@ -121,8 +127,9 @@ def build_calculation_pdf(case, figure=None):
     text('Unidades de estas fórmulas: Q en m³/s, D y L en m, densidad rho en kg/m³, viscosidad mu en Pa·s, g = 9,80665 m/s². Q [m³/s] = Q [L/s] / 1000.')
     for formula in ['v = 4 Q / (pi D²); Re = rho v D / mu.', 'Darcy-Weisbach: hf = f (L/D) v²/(2g). Accesorios: hs = suma(K) v²/(2g).', 'Régimen laminar: f = 64/Re. Turbulento: 1/sqrt(f) = -2 log10(epsilon/(3,7D) + 2,51/(Re sqrt(f))).', 'H sistema = desnivel + suma(hf + hs). El equilibrio satisface H bomba(Q) = H sistema(Q).', 'P hidráulica = rho g Q H / 1000 [kW]; P eje = P hidráulica / eta bomba; P eléctrica = P eje / eta motor. Eficiencias en fracción.', 'VDF: Q2 = Q1 (N2/N1); H2 = H1 (N2/N1)². La eficiencia se traslada al punto homólogo.']:
         text(formula)
-    fit=fit_polynomial([p['Q_L_s']/1000 for p in curve['puntos']],[p['H_m'] for p in curve['puntos']],curve['grado_ajuste'])
-    text('Polinomio nominal H(Q): coeficientes en orden de mayor a menor potencia de Q [m³/s] = '+', '.join(f'{c:.10g}' for c in fit.coefficients)+f'. R² = {fit.r_squared:.6f}.')
+    if curve['puntos']:
+        fit=fit_polynomial([p['Q_L_s']/1000 for p in curve['puntos']],[p['H_m'] for p in curve['puntos']],curve['grado_ajuste'])
+        text('Polinomio nominal H(Q): coeficientes en orden de mayor a menor potencia de Q [m³/s] = '+', '.join(f'{c:.10g}' for c in fit.coefficients)+f'. R² = {fit.r_squared:.6f}.')
     nominal=next((r for r in results if r['Escenario']=='Nominal' and r.get('Q (L/s)') is not None),None)
     if nominal:
         segments=[PipeSegment(label=r['label'],length_m=r['longitud_m'],inside_diameter_mm=r['diametro_interior_mm'],roughness_mm=r['rugosidad_mm'],fitting_counts=r['accesorios']) for r in case['tramos']]
