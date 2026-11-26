@@ -20,7 +20,7 @@ from core.hydraulics.minor_losses import minor_loss_head_m, total_minor_loss_coe
 from core.hydraulics.npsh import atmospheric_head_m, check_npsh, npsh_available, vapor_pressure_head_m
 from core.hydraulics.operating_point import solve_operating_point
 from core.hydraulics.power import compute_power
-from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system
+from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system, pressure_boundary_head_m
 
 
 def test_water_properties_matches_known_table_point():
@@ -196,6 +196,24 @@ def test_build_system_curve_zero_flow_returns_static_head_only():
     segment = PipeSegment(label="Tramo 1", length_m=100, inside_diameter_mm=100, roughness_mm=0.01, fitting_counts={})
     curve = build_system_curve([segment], static_head_m=10.0, density_kg_m3=998.0, viscosity_pa_s=1.002e-3, flow_range_m3_s=[0.0])
     assert curve[0].total_head_m == pytest.approx(10.0)
+
+
+def test_pressure_boundary_head_m_is_zero_when_both_ends_are_open():
+    assert pressure_boundary_head_m(0.0, 0.0, 998.2) == pytest.approx(0.0)
+
+
+def test_pressure_boundary_head_m_available_pressure_reduces_required_head():
+    # Tie-in a 2.5 bar que debe entregar solo 1.5 bar: la presion disponible
+    # ya cubre parte de la exigencia, por lo que el ajuste es negativo.
+    delta = pressure_boundary_head_m(available_bar=2.5, required_bar=1.5, density_kg_m3=998.2)
+    assert delta == pytest.approx(-1.0e5 / (998.2 * 9.80665))
+    assert delta < 0
+
+
+def test_pressure_boundary_head_m_required_pressure_adds_head():
+    delta = pressure_boundary_head_m(available_bar=0.0, required_bar=1.5, density_kg_m3=998.2)
+    assert delta > 0
+    assert delta == pytest.approx(1.5e5 / (998.2 * 9.80665))
 
 
 def test_minor_loss_fraction_mode_matches_pct_of_friction():

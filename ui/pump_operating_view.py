@@ -37,7 +37,7 @@ from core.hydraulics.operating_point import solve_operating_point
 from core.hydraulics.power import compute_power
 from core.hydraulics.pressure_rating import PN_BAR_TABLE, build_shutoff_pressure_profile
 from core.hydraulics.surge import PIPE_ELASTIC_MODULUS_PA, WATER_BULK_MODULUS_PA, compute_surge
-from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system
+from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system, pressure_boundary_head_m
 from core.hydraulics.velocity_check import DEFAULT_MAX_VELOCITY_M_S, DEFAULT_MIN_VELOCITY_M_S, check_velocity
 
 _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadrática (grado 2)": 2, "Cúbica (grado 3)": 3}
@@ -126,7 +126,7 @@ def _render_library_section(key_prefix: str) -> None:
 
 
 
-def render_pump_operating_point_tab() -> None:
+def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
     with st.expander("📖 ¿Cómo se usa esta calculadora? (guía rápida)", expanded=False):
         st.markdown(
             "Esta calculadora encuentra el **punto de operación** de tu sistema de bombeo: el caudal y "
@@ -147,7 +147,7 @@ def render_pump_operating_point_tab() -> None:
     # Excludes button/download_button keys (fixed names, plus the "_lib_" family
     # for the library's save/download/delete buttons) — Streamlit forbids
     # self-assigning those "trigger" widgets' session_state.
-    _non_reassignable = {"pump_curve_editor", "pump_export", "pump_add_scenario", "pump_remove_scenario", "pump_pdf"}
+    _non_reassignable = {"pump_curve_editor", "pump_export", "pump_add_scenario", "pump_remove_scenario", "pump_pdf", "pump_demand_csv"}
     for key in list(st.session_state):
         if key.startswith("pump_") and "_lib_" not in key and key not in _non_reassignable:
             st.session_state[key] = st.session_state[key]
@@ -160,28 +160,91 @@ def render_pump_operating_point_tab() -> None:
     with st.expander("1 · Líquido y desnivel", expanded=stage == stages[0]):
         st.write("Para agua, basta con indicar su temperatura. El desnivel es la cota del destino menos la cota del origen.")
         fluid = _render_fluid_section("pump")
-        static_head_m = st.number_input(
+        desnivel_geometrico_m = st.number_input(
             "Desnivel entre destino y origen (m)",
             value=18.5, step=0.1, key="pump_static_head",
             help="Ejemplo: origen a 100 m y destino a 118,5 m → 18,5 m. No es la longitud de tubería. Si el destino está más abajo, usa un valor negativo.",
         )
-
         st.caption("Ejemplo: origen 100 m → destino 118,5 m → desnivel +18,5 m.")
+
+        with st.expander("Presión de borde en el origen y el destino (opcional)", expanded=False):
+            st.caption(
+                "Úsalo cuando el sistema conecta a una red existente con presión conocida en el origen "
+                "(p. ej. un tie-in) y debe entregar a una presión mínima en el destino (p. ej. una sala "
+                "de proceso). Se convierte a una carga equivalente y se suma al desnivel geométrico; no "
+                "se mezcla con la fricción ni con el % de accesorios."
+            )
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                p_disponible_bar = st.number_input(
+                    "Presión disponible en el origen / Tie-in (bar)",
+                    value=0.0, step=0.1, key="pump_p_tiein_bar",
+                    help="Presión ya existente en el punto de succión u origen. 0 si el origen es un depósito abierto.",
+                )
+            with col_p2:
+                p_requerida_bar = st.number_input(
+                    "Presión requerida en el destino (bar)",
+                    value=0.0, step=0.1, key="pump_p_destino_bar",
+                    help="Presión mínima exigida en el punto de entrega. 0 si la descarga es abierta.",
+                )
+            delta_head_m = pressure_boundary_head_m(p_disponible_bar, p_requerida_bar, fluid.density_kg_m3)
+            if p_disponible_bar or p_requerida_bar:
+                signo = "+" if delta_head_m >= 0 else "−"
+                st.caption(
+                    f"Ajuste por presión de borde: ({p_requerida_bar:g} − {p_disponible_bar:g}) bar ÷ (ρ·g) = "
+                    f"{signo}{abs(delta_head_m):.2f} m sobre el desnivel geométrico. "
+                    f"Desnivel efectivo usado en el cálculo: {desnivel_geometrico_m + delta_head_m:.2f} m."
+                )
+        static_head_m = desnivel_geometrico_m + delta_head_m
         st.button("Continuar a tuberías →", key="nav_to_pipes", on_click=go_stage, args=(1,))
     with st.expander("2 · Tuberías y accesorios", expanded=stage == stages[1]):
         st.write("Comienza con un tramo. Ingresa la longitud real del recorrido y el diámetro INTERIOR, o elige una referencia HDPE PE100 o PEXGOL para cargar sus dimensiones.")
         segments, pn_labels, catalog_rows = _render_segments_section("pump", fluid=fluid)
         st.button("Continuar a bomba →", key="nav_to_pump", on_click=go_stage, args=(2,))
     with st.expander("3 · Datos de la bomba", expanded=stage == stages[2]):
-        st.write("Busca la curva Q–H del fabricante. Haz doble clic en las celdas para reemplazar el ejemplo: Q es caudal en L/s y H es altura en metros. Si no tienes esa curva, solo puedes explorar el ejemplo; no seleccionar tu bomba real.")
-        q_points, h_points, eta_points, degree = _render_pump_curve_section("pump")
-        if len(q_points) < degree + 1:
-            st.error(f"Se necesitan al menos {degree + 1} puntos para un ajuste de grado {degree}.")
-            return
+        no_pump_mode = st.checkbox(
+            "Aún no tengo bomba seleccionada — solo quiero la curva de demanda del sistema",
+            key="pump_no_pump_mode",
+            help="Genera la curva de resistencia del sistema (Q vs H requerida) y una tabla descargable "
+            "para enviar a proveedores, sin necesitar todavía la curva Q-H de un fabricante.",
+        )
+        q_points, h_points, eta_points, degree = [], [], [], 0
+        motor_efficiency_pct = flat_efficiency_pct = None
+        scenarios = []
+        design_flow_l_s = None
+        if no_pump_mode:
+            design_flow_l_s = st.number_input(
+                "Caudal de diseño (L/s)", min_value=0.001, value=1.37, step=0.01, key="pump_design_flow_l_s",
+                help="Caudal objetivo de la instalación, independiente de cualquier curva de bomba.",
+            )
+            st.caption(f"Equivale a {design_flow_l_s * 60:.2f} L/min · {design_flow_l_s * 3.6:.3f} m³/h.")
+            st.info(
+                "Sin curva de bomba: ve al paso 4 para ver la curva de demanda del sistema, la tabla "
+                "descargable y la altura adicional estimada que debería aportar una bomba."
+            )
+        else:
+            st.write("Busca la curva Q–H del fabricante. Haz doble clic en las celdas para reemplazar el ejemplo: Q es caudal en L/s y H es altura en metros. Si no tienes esa curva, solo puedes explorar el ejemplo; no seleccionar tu bomba real.")
+            q_points, h_points, eta_points, degree = _render_pump_curve_section("pump")
+            if len(q_points) < degree + 1:
+                st.error(f"Se necesitan al menos {degree + 1} puntos para un ajuste de grado {degree}.")
+                return
 
-        motor_efficiency_pct = st.number_input("Eficiencia motor (%)", min_value=1.0, max_value=100.0, value=92.0, key="pump_eta_motor")
-        with st.expander("Comparar velocidades y bombas en serie / paralelo"):
-            scenarios = _render_scenarios_section("pump")
+            motor_efficiency_pct = st.number_input("Eficiencia motor (%)", min_value=1.0, max_value=100.0, value=92.0, key="pump_eta_motor")
+            with st.expander("Comparar velocidades y bombas en serie / paralelo"):
+                scenarios = _render_scenarios_section("pump")
+
+            if any(e is None for e in eta_points):
+                if any(e is not None for e in eta_points):
+                    st.error(
+                        "Curva de eficiencia incompleta: o se define eta para TODOS los puntos de la "
+                        "curva de bomba, o para NINGUNO (en ese caso se usa un valor constante abajo). "
+                        "No se interpola un valor faltante."
+                    )
+                    return
+                flat_efficiency_pct = st.number_input(
+                    "Eficiencia de bomba constante (%) — asumida, no medida por punto",
+                    min_value=1.0, max_value=100.0, value=75.0, key="pump_eta_flat",
+                )
 
         base_curve = PumpCurve(
             points=tuple(
@@ -190,29 +253,17 @@ def render_pump_operating_point_tab() -> None:
             ),
             label="Bomba nominal",
         )
-        flat_efficiency_pct = None
-        if any(e is None for e in eta_points):
-            if any(e is not None for e in eta_points):
-                st.error(
-                    "Curva de eficiencia incompleta: o se define eta para TODOS los puntos de la "
-                    "curva de bomba, o para NINGUNO (en ese caso se usa un valor constante abajo). "
-                    "No se interpola un valor faltante."
-                )
-                return
-            flat_efficiency_pct = st.number_input(
-                "Eficiencia de bomba constante (%) — asumida, no medida por punto",
-                min_value=1.0, max_value=100.0, value=75.0, key="pump_eta_flat",
-            )
-
         st.button("Ver resultados →", key="nav_to_results", on_click=go_stage, args=(3,))
 
     if st.session_state.get("pump_fluid_incomplete", False):
         return
 
     with st.expander("Resumen de los datos ingresados", expanded=stage == stages[3]):
-        st.write(f"{fluid.name} · {fluid.temperature_c:g} °C · Desnivel {static_head_m:g} m · {len(segments)} tramo(s) · {len(q_points)} puntos de bomba")
+        desnivel_label = "Desnivel" if static_head_m == desnivel_geometrico_m else "Desnivel efectivo (incl. presión de borde)"
+        bomba_label = f"caudal de diseño {design_flow_l_s:g} L/s (sin bomba)" if no_pump_mode else f"{len(q_points)} puntos de bomba"
+        st.write(f"{fluid.name} · {fluid.temperature_c:g} °C · {desnivel_label} {static_head_m:.2f} m · {len(segments)} tramo(s) · {bomba_label}")
         st.dataframe([{"Tramo": seg.label, "Longitud (m)": seg.length_m, "DI usado (mm)": seg.inside_diameter_mm, "ΣK": _sigma_k_display(seg)} for seg in segments], hide_index=True)
-    q_max_curve = max(q_points) / 1000.0
+    q_max_curve = (design_flow_l_s / 1000.0 * 2.0) if no_pump_mode else (max(q_points) / 1000.0)
     flow_range = np.linspace(0.0, q_max_curve * 1.05, 60).tolist()
     system_points = build_system_curve(
         segments, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s, flow_range
@@ -291,9 +342,17 @@ def render_pump_operating_point_tab() -> None:
             )
 
     nominal = next((r for r in results if r["Escenario"] == "Nominal" and r["Q (L/s)"] is not None), None)
+    design_eval = None
+    nominal_for_checks = nominal
+    if no_pump_mode and design_flow_l_s:
+        design_eval = evaluate_system(segments, design_flow_l_s / 1000.0, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
+        nominal_for_checks = {"Q (L/s)": design_flow_l_s, "H (m)": design_eval.total_head_m}
     with st.expander("4 · Resultados, verificaciones y descarga", expanded=stage == stages[3]):
         with st.container(border=True):
-            st.subheader("Punto de operación")
+            if no_pump_mode:
+                st.subheader("Demanda del sistema (sin bomba seleccionada)")
+            else:
+                st.subheader("Punto de operación")
             if nominal:
                 flow, head, power = st.columns(3)
                 flow.metric("Caudal", f"{nominal['Q (L/s)']:.2f} L/s")
@@ -309,6 +368,37 @@ def render_pump_operating_point_tab() -> None:
                 powers[1].metric("Potencia al eje", f"{nominal['P eje (kW)']:.2f} kW")
                 powers[2].metric("Potencia eléctrica", f"{nominal['P eléctrica (HP)']:.2f} HP")
 
+            elif no_pump_mode and design_eval is not None:
+                st.caption(
+                    "Esto es la demanda del sistema a tu caudal de diseño — no es un punto de "
+                    "equilibrio con una curva de bomba real, porque todavía no ingresaste una."
+                )
+                hf_total = sum(e.friction_head_loss_m for e in design_eval.segment_evaluations)
+                hs_total = sum(e.minor_head_loss_m for e in design_eval.segment_evaluations)
+                r1 = st.columns(3)
+                r1[0].metric("Caudal de diseño", f"{design_flow_l_s:.2f} L/s", help=f"{design_flow_l_s * 3.6:.3f} m³/h · {design_flow_l_s * 60:.1f} L/min")
+                r1[1].metric("Desnivel geométrico", f"{desnivel_geometrico_m:.2f} m")
+                if p_disponible_bar or p_requerida_bar:
+                    r1[2].metric("Ajuste por presión de borde", f"{delta_head_m:+.2f} m")
+                else:
+                    r1[2].metric("Presión de borde", "no definida")
+                r2 = st.columns(3)
+                r2[0].metric("Pérdida por fricción", f"{hf_total:.2f} m")
+                r2[1].metric("Pérdida/estimación accesorios", f"{hs_total:.2f} m")
+                r2[2].metric("Altura adicional estimada de bomba", f"{design_eval.total_head_m:.2f} m.c.a.")
+                if design_eval.total_head_m <= 0:
+                    st.success(
+                        f"Con estos datos, la presión/desnivel disponible ya cubriría la demanda al "
+                        f"caudal de diseño — no se requeriría bombeo adicional (margen "
+                        f"{abs(design_eval.total_head_m):.2f} m.c.a.)."
+                    )
+                else:
+                    st.caption(
+                        "Resultado preliminar: pérdidas por fricción (Darcy-Weisbach/Colebrook-White) más "
+                        "la pérdida o estimación de accesorios configurada por tramo. Supone que la presión "
+                        "de borde ingresada se mantiene constante al caudal de diseño — verifica con el "
+                        "proveedor de la red si esa presión cae al circular ese caudal."
+                    )
             else:
                 st.info("No hay un punto de equilibrio. Revisa la curva y el desnivel de tu sistema.")
             with st.expander("Formato y descarga de la gráfica"):
@@ -332,35 +422,42 @@ def render_pump_operating_point_tab() -> None:
                 title=dict(text=chart_title, x=0.5),
                 xaxis_title="Caudal (L/s)", yaxis_title="Altura (m)", height=480,
                 margin=dict(l=25, r=25, t=70, b=60),
-                legend=dict(orientation="h", y=-0.2), template="plotly_white",
-                font=dict(family="Times New Roman, Times, serif", size=chart_font_size, color="#111111"),
-                paper_bgcolor="white", plot_bgcolor="white",
+                legend=dict(orientation="h", y=-0.2), template="plotly_dark" if dark_mode else "plotly_white",
+                font=dict(family="Times New Roman, Times, serif", size=chart_font_size, color="#e6edf5" if dark_mode else "#111111"),
+                paper_bgcolor="#121d2c" if dark_mode else "white", plot_bgcolor="#121d2c" if dark_mode else "white",
             )
-            fig.update_xaxes(showline=True, linecolor="#333333", ticks="outside", gridcolor="#e4e4e4")
-            fig.update_yaxes(showline=True, linecolor="#333333", ticks="outside", gridcolor="#e4e4e4")
+            fig.update_xaxes(showline=True, linecolor="#5c6f82" if dark_mode else "#333333", ticks="outside", gridcolor="#223349" if dark_mode else "#e4e4e4")
+            fig.update_yaxes(showline=True, linecolor="#5c6f82" if dark_mode else "#333333", ticks="outside", gridcolor="#223349" if dark_mode else "#e4e4e4")
             st.plotly_chart(fig, use_container_width=True, key="pump_operating_chart", config={
                 "displaylogo": False,
                 "toImageButtonOptions": {"format": export_format, "filename": "BESB_Piping_curva", "width": 1600, "height": 1000, "scale": 2 if export_format == "png" else 1},
             })
             st.caption("El cruce de las curvas indica el caudal y la altura de funcionamiento.")
-            with st.expander("Comparación de escenarios VDF", expanded=len(results) > 1):
-                st.dataframe(results, use_container_width=True, hide_index=True)
+            demand_csv = "Q (L/s),H requerida (m)\n" + "\n".join(f"{q * 1000:.3f},{h:.3f}" for q, h in zip(system_q, system_h))
+            st.download_button(
+                "📥 Descargar tabla de demanda del sistema (CSV)", data=demand_csv,
+                file_name="BESB_Piping_curva_demanda.csv", mime="text/csv", key="pump_demand_csv",
+                help="Caudal vs. altura requerida por el sistema, sin depender de una curva de bomba — útil para enviar a proveedores.",
+            )
+            if not no_pump_mode:
+                with st.expander("Comparación de escenarios VDF", expanded=len(results) > 1):
+                    st.dataframe(results, use_container_width=True, hide_index=True)
             if any(catalog_rows):
                 st.caption("Catálogos · datos preliminares pendientes de revisión humana.")
 
-        _render_energy_profile(segments, fluid, nominal, static_head_m)
+        _render_energy_profile(segments, fluid, nominal_for_checks, static_head_m, dark_mode=dark_mode)
         _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree)
         st.subheader("5 · Verificaciones y descarga")
         st.caption("Después de revisar el caudal, comprueba presión, velocidad y, si tienes los datos, succión y cierre de válvulas.")
         with st.expander("Detalle por tramo: velocidad, pérdidas y clase de presión", expanded=True):
-            st.subheader("Detalle por tramo (en el punto de operación nominal)")
+            st.subheader("Detalle por tramo (al caudal de diseño)" if no_pump_mode else "Detalle por tramo (en el punto de operación nominal)")
             col_vmin, col_vmax = st.columns(2)
             v_min = col_vmin.number_input("Velocidad mínima recomendada (m/s) — guía, no norma", min_value=0.0, value=DEFAULT_MIN_VELOCITY_M_S, key="pump_vmin")
             v_max = col_vmax.number_input("Velocidad máxima recomendada (m/s) — guía, no norma", min_value=0.1, value=DEFAULT_MAX_VELOCITY_M_S, key="pump_vmax")
 
             velocity_checks = []
-            if nominal:
-                q_op = nominal["Q (L/s)"] / 1000.0
+            if nominal_for_checks:
+                q_op = nominal_for_checks["Q (L/s)"] / 1000.0
                 detail = evaluate_system(segments, q_op, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
                 rows = []
                 for i, (seg, ev) in enumerate(zip(segments, detail.segment_evaluations)):
@@ -403,15 +500,15 @@ def render_pump_operating_point_tab() -> None:
 
         with st.expander("Presión admisible de las tuberías"):
             pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, static_head_m, catalog_rows)
-        npsh_result = _render_npsh_section("pump", fluid, nominal)
-        surge_result = _render_surge_section("pump", segments, fluid, nominal, catalog_rows)
+        npsh_result = _render_npsh_section("pump", fluid, nominal_for_checks)
+        surge_result = _render_surge_section("pump", segments, fluid, nominal_for_checks, catalog_rows)
 
         st.subheader("Resumen de tu sistema")
         if any(catalog_rows):
             st.warning("Caso PRELIMINAR: contiene datos de catálogo pendientes de revisión.")
-        st.markdown(_build_executive_summary(nominal, results, npsh_result, segments, velocity_checks, pressure_checks, surge_result))
+        st.markdown(_build_executive_summary(nominal, results, npsh_result, segments, velocity_checks, pressure_checks, surge_result, no_pump_mode=no_pump_mode, design_eval=design_eval, design_flow_l_s=design_flow_l_s))
 
-        _render_export_section("pump", fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows, fig, scenarios)
+        _render_export_section("pump", fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows, fig, scenarios, desnivel_geometrico_m=desnivel_geometrico_m, p_disponible_bar=p_disponible_bar, p_requerida_bar=p_requerida_bar, no_pump_mode=no_pump_mode, design_flow_l_s=design_flow_l_s)
 
 
 def _render_fluid_section(key_prefix: str) -> FluidProperties:
@@ -805,7 +902,7 @@ def _render_surge_section(key_prefix, segments, fluid, nominal, catalog_rows=Non
         return result
 
 
-def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows=None, figure=None, scenarios=None):
+def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows=None, figure=None, scenarios=None, desnivel_geometrico_m=None, p_disponible_bar=0.0, p_requerida_bar=0.0, no_pump_mode=False, design_flow_l_s=None):
     st.subheader("Descarga tu memoria y los datos del caso")
     case = {
         "proyecto": st.session_state.get("pump_project_name", "Mi sistema de bombeo"),
@@ -832,6 +929,11 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
             "color_bomba": st.session_state.get("pump_chart_pump_color", "#155A8A"),
         },
         "altura_estatica_m": static_head_m,
+        "modo_sin_bomba": no_pump_mode,
+        "caudal_diseno_l_s": design_flow_l_s if no_pump_mode else None,
+        "desnivel_geometrico_m": desnivel_geometrico_m if desnivel_geometrico_m is not None else static_head_m,
+        "presion_disponible_origen_bar": p_disponible_bar,
+        "presion_requerida_destino_bar": p_requerida_bar,
         "curva_bomba": {"grado_ajuste": degree, "puntos": [{"Q_L_s": q, "H_m": h, "eta_pct": e} for q, h, e in zip(q_points, h_points, eta_points)]},
         "resultados_por_escenario": results,
         "npsh": None if npsh_result is None else {
@@ -865,10 +967,30 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
             p_elec_kw = nominal["P eléctrica (kW)"] if nominal else None
             ok, message = save_case(owner_key, case["proyecto"], case, q_l_s, h_m, p_elec_kw)
             (st.success if ok else st.error)(message)
+    else:
+        st.caption(
+            "💾 \"Guardar en mi librería\" no aparece en este entorno porque faltan las "
+            "credenciales de Supabase (`SUPABASE_URL` / `SUPABASE_ANON_KEY` en secrets) — "
+            "normal en un Codespace o entorno local nuevo. Sí está disponible en el "
+            "despliegue donde configuraste esos secrets."
+        )
 
 
-def _build_executive_summary(nominal, results, npsh_result, segments, velocity_checks=None, pressure_checks=None, surge_result=None) -> str:
+def _build_executive_summary(nominal, results, npsh_result, segments, velocity_checks=None, pressure_checks=None, surge_result=None, no_pump_mode=False, design_eval=None, design_flow_l_s=None) -> str:
     if not nominal:
+        if no_pump_mode and design_eval is not None:
+            lines = [
+                f"- Sin bomba seleccionada todavía: demanda del sistema al caudal de diseño "
+                f"**Q = {design_flow_l_s:.2f} L/s** → altura adicional estimada "
+                f"**{design_eval.total_head_m:.2f} m.c.a.**",
+            ]
+            if design_eval.total_head_m <= 0:
+                lines.append("- La presión/desnivel disponible ya cubriría esta demanda: no se requeriría bombeo adicional con los supuestos ingresados.")
+            if velocity_checks:
+                bad = [v for v in velocity_checks if v.status != "OK"]
+                if bad:
+                    lines.append(f"- **{len(bad)} tramo(s) fuera del rango de velocidad recomendado** al caudal de diseño.")
+            return "\n".join(lines)
         return (
             "No se encontró un punto de operación en equilibrio para el escenario nominal — "
             "revisa si la curva de bomba y la curva de sistema se cruzan en el rango de "
@@ -946,10 +1068,13 @@ def _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree):
         st.latex(r"H_{\mathrm{sistema}}(Q)=\Delta z+\sum_i(h_{f,i}+h_{s,i}),\qquad H_{\mathrm{bomba}}(Q)=\sum_{k=0}^{d}a_kQ^k")
         st.latex(r"H_{\mathrm{bomba}}(Q_*)=H_{\mathrm{sistema}}(Q_*)")
         st.write("Δz es el desnivel destino menos origen (m). La curva de bomba se ajusta por mínimos cuadrados al grado elegido; el cruce se busca por bisección. En esta versión, la curva del sistema se interpola entre 60 puntos y fuera de su rango conserva el extremo: revisa el rango de la curva antes de interpretar escenarios alejados del nominal.")
-        fit = fit_polynomial([q / 1000 for q in q_points], h_points, degree)
-        terms = [f"({c:.6g})Q^{{{degree-i}}}" for i, c in enumerate(fit.coefficients)]
-        st.latex(r"H_{\mathrm{bomba,nominal}}(Q)=" + "+".join(terms))
-        st.caption(f"Ajuste de la curva ingresada, antes de combinar bombas: Q en m³/s, H en m. R² = {fit.r_squared:.5f}.")
+        if q_points:
+            fit = fit_polynomial([q / 1000 for q in q_points], h_points, degree)
+            terms = [f"({c:.6g})Q^{{{degree-i}}}" for i, c in enumerate(fit.coefficients)]
+            st.latex(r"H_{\mathrm{bomba,nominal}}(Q)=" + "+".join(terms))
+            st.caption(f"Ajuste de la curva ingresada, antes de combinar bombas: Q en m³/s, H en m. R² = {fit.r_squared:.5f}.")
+        else:
+            st.caption("Sin curva de bomba ingresada todavía — esta sección se completa cuando definas los puntos Q-H.")
         st.markdown("**C. Potencia**")
         st.latex(r"P_h=\rho gQH,\quad P_{\mathrm{eje}}=P_h/\eta_b,\quad P_e=P_h/(\eta_b\eta_m)")
         st.write("Potencias en W (divide por 1000 para kW). ηb y ηm son eficiencias de bomba y motor como fracción: 75 % = 0,75. La eficiencia de bomba se interpola si ingresaste todos sus puntos; si no, se usa el valor constante asumido.")
@@ -974,7 +1099,7 @@ def _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree):
         st.caption("Afinidad para cambio de velocidad N. Bombas idénticas: en paralelo se suman caudales a igual H; en serie se suman alturas a igual Q. La eficiencia de cada punto se traslada con la curva; una eficiencia constante sigue siendo un supuesto.")
 
 
-def _render_energy_profile(segments, fluid, nominal, static_head_m):
+def _render_energy_profile(segments, fluid, nominal, static_head_m, dark_mode: bool = False):
     with st.expander("Perfil de energía y presión · ilustrativo", expanded=True):
         st.caption("Bomba al inicio, origen de cotas en el depósito de succión. Se supone una pendiente uniforme y se reparten las pérdidas de cada tramo a lo largo de su longitud. No hay cotas de terreno ni ubicación real de accesorios: este perfil no verifica presiones de diseño.")
         if not nominal:
@@ -983,17 +1108,18 @@ def _render_energy_profile(segments, fluid, nominal, static_head_m):
         rows = illustrative_profile(segments, nominal['Q (L/s)']/1000, nominal['H (m)'], static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
         fig = go.Figure()
         for field, label, color, dash, axis in [
-            ('energia_m', 'Energía total (m)', '#526578', 'dot', 'y'),
-            ('piezometrica_m', 'Cota piezométrica (m)', '#155A8A', 'solid', 'y'),
-            ('cota_m', 'Cota supuesta de tubería (m)', '#777777', 'solid', 'y'),
-            ('presion_bar', 'Presión relativa (bar)', '#0599A5', 'dash', 'y2')]:
+            ('energia_m', 'Energía total (m)', '#8aa0b4' if dark_mode else '#526578', 'dot', 'y'),
+            ('piezometrica_m', 'Cota piezométrica (m)', '#4fa3e3' if dark_mode else '#155A8A', 'solid', 'y'),
+            ('cota_m', 'Cota supuesta de tubería (m)', '#9aa5ae' if dark_mode else '#777777', 'solid', 'y'),
+            ('presion_bar', 'Presión relativa (bar)', '#3ec9d6' if dark_mode else '#0599A5', 'dash', 'y2')]:
             fig.add_trace(go.Scatter(x=[r['distancia_m'] for r in rows], y=[r[field] for r in rows], name=label, mode='lines', line=dict(color=color, dash=dash), yaxis=axis))
         for row in rows[1:-1:2]:
-            fig.add_vline(x=row['distancia_m'], line_dash='dot', line_color='#cccccc')
-        fig.update_layout(template='plotly_white', height=420, font=dict(family='Times New Roman, Times, serif', size=16),
+            fig.add_vline(x=row['distancia_m'], line_dash='dot', line_color='#3a4f63' if dark_mode else '#cccccc')
+        fig.update_layout(template='plotly_dark' if dark_mode else 'plotly_white', height=420, font=dict(family='Times New Roman, Times, serif', size=16),
                           xaxis_title='Distancia desde la bomba (m)', yaxis_title='Cota / energía (m)',
                           yaxis2=dict(title='Presión relativa (bar)', overlaying='y', side='right'),
-                          legend=dict(orientation='h', y=-0.25), margin=dict(t=20, b=100))
+                          legend=dict(orientation='h', y=-0.25), margin=dict(t=20, b=100),
+                          paper_bgcolor="#121d2c" if dark_mode else "white", plot_bgcolor="#121d2c" if dark_mode else "white")
         st.plotly_chart(fig, use_container_width=True, key='pump_energy_profile', config={'displaylogo': False, 'toImageButtonOptions': {'format':st.session_state.get('pump_chart_format','png'), 'filename':'BESB_Piping_perfil', 'width':1600,'height':1000,'scale':2}})
         st.latex(r"E(x)=H_b-\sum h_{\mathrm{pérdidas}},\quad H_p=E-v^2/(2g),\quad p=\rho g(H_p-z)/10^5\;[bar]")
         st.caption("Los cambios de diámetro producen saltos de cota piezométrica por el cambio de velocidad. Las pérdidas de reductores deben ingresarse como accesorios. No se fuerza el extremo del gráfico a presión cero.")

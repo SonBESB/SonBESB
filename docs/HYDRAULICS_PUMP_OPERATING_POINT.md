@@ -171,6 +171,36 @@ espesor para golpe de ariete y procedencia exportada. Ver
 [PEXGOL_CATALOG.md](PEXGOL_CATALOG.md) para alcance y 26 discrepancias.
 Datos pendientes de revision humana; resultados preliminares.
 
+## Presion de borde (tie-in / destino presurizado)
+
+Limitacion real reportada por el usuario: el "Desnivel entre destino y
+origen" solo captura la diferencia de cota, no una diferencia de presion
+de borde cuando el sistema conecta a una red existente con presion
+conocida (tie-in) y debe entregar a una presion minima en el destino
+(ej. una sala de proceso). Antes, la unica forma de modelar eso era
+mezclarlo a mano dentro del campo de desnivel, sin dejar rastro de que
+parte era geometria y que parte era presion.
+
+`core/hydraulics/system_curve.pressure_boundary_head_m(available_bar,
+required_bar, density_kg_m3)` convierte `(presion_requerida -
+presion_disponible)` a una carga equivalente en metros (ecuacion de
+energia entre el origen y el destino: positivo exige mas carga a la
+bomba, negativo indica que la presion ya disponible en el origen cubre
+parte o toda la presion requerida en el destino). La UI lo suma al
+desnivel geometrico para obtener el "desnivel efectivo" que alimenta la
+curva de sistema — ambos valores (geometrico y el ajuste) quedan
+visibles por separado en pantalla y en el JSON exportado
+(`desnivel_geometrico_m`, `presion_disponible_origen_bar`,
+`presion_requerida_destino_bar`, `altura_estatica_m`). Por defecto ambas
+presiones son 0 bar (ambos extremos abiertos a la atmosfera), que es un
+no-op: no cambia el comportamiento de un caso que no las usa.
+
+No se mezcla con la fricción ni con el modo "% de la fricción" para
+accesorios (ver seccion anterior): son tres ajustes de carga
+independientes y con una fuente fisica distinta cada uno (perdida por
+friccion, perdida/estimacion por accesorios, diferencia de presion de
+borde).
+
 ## Libreria de calculos guardados (Supabase)
 
 Modulo `core/hydraulics/pumping_library.py`. Persiste casos (el mismo

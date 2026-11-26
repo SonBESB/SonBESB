@@ -663,31 +663,62 @@ def main() -> None:
 
 
 def pumping_main() -> None:
-    st.markdown("""<style>
-    [data-testid="stAppViewContainer"] {background:linear-gradient(180deg,#eef4fb 0%,#e4edf9 55%,#dbe8f6 100%); background-attachment:fixed;}
-    .block-container {max-width:1100px; padding-top:1.5rem;}
-    h1 {letter-spacing:-0.035em;}
-    [data-testid="stMetric"] {background:#edf5fc; border:1px solid #d2e4f3; border-radius:12px; padding:14px;}
-    [data-testid="stMetricValue"] {color:#125b95;}
-    [data-testid="stExpander"] {border-radius:12px; background:#ffffff; border:1px solid #dce8f2; box-shadow:0 2px 10px rgba(18,91,149,0.06);}
-    .stDownloadButton button {background:#125b95; color:white; border-radius:8px;}
-    .stButton button {border-radius:999px; font-weight:600;}
-    [data-testid="stProgress"] > div > div {background-color:#125b95;}
-    [data-testid="stLatex"], .katex-display {overflow-x:auto; overflow-y:hidden; max-width:100%;}
-    .besb-brand {display:flex; align-items:baseline; gap:.4rem; margin-bottom:.1rem;}
-    .besb-brand .mark {font-size:2.1rem; font-weight:800; color:#0e3a5f; letter-spacing:-0.03em;}
-    .besb-brand .sub {font-size:1.3rem; font-weight:400; color:#125b95;}
-    .besb-accent {height:4px; width:64px; background:linear-gradient(90deg,#125b95,#4fa3e3); border-radius:999px; margin:.3rem 0 1rem 0;}
-    @media (max-width: 640px) {
-        .block-container {padding-left:0.8rem; padding-right:0.8rem;}
-        .besb-brand .mark {font-size:1.6rem;}
-        .besb-brand .sub {font-size:1rem;}
-        .stButton button {font-size:0.78rem; padding:0.3rem 0.4rem;}
-    }
+    top_l, top_r = st.columns([5, 1])
+    with top_r:
+        dark_mode = st.toggle("🌙 Oscuro", value=st.session_state.get("besb_dark_mode", False), key="besb_dark_mode")
+
+    if dark_mode:
+        page_bg = "linear-gradient(180deg,#0b1420 0%,#0e1826 55%,#0a1420 100%)"
+        card_bg, card_border, card_shadow = "#121d2c", "#22364a", "rgba(0,0,0,0.35)"
+        metric_bg, metric_border, metric_value = "#16263a", "#28415a", "#6fb3ef"
+        mark_color, sub_color, accent = "#e7eef7", "#6fb3ef", "linear-gradient(90deg,#4fa3e3,#1a2f45)"
+        text_color = "#dbe6f2"
+    else:
+        page_bg = "linear-gradient(180deg,#eef4fb 0%,#e4edf9 55%,#dbe8f6 100%)"
+        card_bg, card_border, card_shadow = "#ffffff", "#dce8f2", "rgba(18,91,149,0.06)"
+        metric_bg, metric_border, metric_value = "#edf5fc", "#d2e4f3", "#125b95"
+        mark_color, sub_color, accent = "#0e3a5f", "#125b95", "linear-gradient(90deg,#125b95,#4fa3e3)"
+        text_color = "#183047"
+
+    dark_extra = ""
+    if dark_mode:
+        dark_extra = f"""
+    body, .stMarkdown, p, span, label, h1, h2, h3, h4, li {{color:{text_color};}}
+    [data-testid="stCaptionContainer"], .stCaption {{color:#9fb3c8 !important;}}
+    [data-baseweb="input"], [data-baseweb="select"] > div, [data-baseweb="textarea"] {{background:#16233a !important; border-color:#2c4258 !important;}}
+    input, textarea {{background:transparent !important; color:{text_color} !important;}}
+    [data-testid="stHeader"] {{background:rgba(10,20,32,0.0);}}
+    hr {{border-color:#243a4f;}}
+    """
+
+    st.markdown(f"""<style>
+    [data-testid="stAppViewContainer"] {{background:{page_bg}; background-attachment:fixed;}}
+    .block-container {{max-width:1100px; padding-top:3.5rem;}}
+    h1 {{letter-spacing:-0.035em;}}
+    [data-testid="stMetric"] {{background:{metric_bg}; border:1px solid {metric_border}; border-radius:12px; padding:14px;}}
+    [data-testid="stMetricValue"] {{color:{metric_value};}}
+    [data-testid="stExpander"] {{border-radius:12px; background:{card_bg}; border:1px solid {card_border}; box-shadow:0 2px 10px {card_shadow};}}
+    [data-testid="stExpander"] summary, [data-testid="stExpander"] summary * {{background:{card_bg} !important; color:{text_color} !important;}}
+    .stDownloadButton button {{background:#125b95; color:white; border-radius:8px;}}
+    .stButton button {{border-radius:999px; font-weight:600;}}
+    [data-testid="stProgress"] > div > div {{background-color:#125b95;}}
+    [data-testid="stLatex"], .katex-display {{overflow-x:auto; overflow-y:hidden; max-width:100%;}}
+    .besb-brand {{display:flex; align-items:baseline; gap:.4rem; margin-bottom:.1rem;}}
+    .besb-brand .mark {{font-size:2.1rem; font-weight:800; color:{mark_color}; letter-spacing:-0.03em;}}
+    .besb-brand .sub {{font-size:1.3rem; font-weight:400; color:{sub_color};}}
+    .besb-accent {{height:4px; width:64px; background:{accent}; border-radius:999px; margin:.3rem 0 1rem 0;}}
+    {dark_extra}
+    @media (max-width: 640px) {{
+        .block-container {{padding-left:0.8rem; padding-right:0.8rem;}}
+        .besb-brand .mark {{font-size:1.6rem;}}
+        .besb-brand .sub {{font-size:1rem;}}
+        .stButton button {{font-size:0.78rem; padding:0.3rem 0.4rem;}}
+    }}
     </style>""", unsafe_allow_html=True)
-    st.markdown('<div class="besb-brand"><span class="mark">BESB</span><span class="sub">Piping</span></div><div class="besb-accent"></div>', unsafe_allow_html=True)
+    with top_l:
+        st.markdown('<div class="besb-brand"><span class="mark">BESB</span><span class="sub">Piping</span></div><div class="besb-accent"></div>', unsafe_allow_html=True)
     st.markdown("**Calculadora de bombeo**")
-    render_pump_operating_point_tab()
+    render_pump_operating_point_tab(dark_mode=dark_mode)
     with st.expander("Acerca de los cálculos y sus límites"):
         st.write("Estimación de ingeniería para tramos en serie. Revisa los resultados con los datos del fabricante y los criterios de tu proyecto. Los accesorios usan coeficientes genéricos; el catálogo PEXGOL está pendiente de revisión humana.")
 
