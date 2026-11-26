@@ -126,7 +126,7 @@ def _render_library_section(key_prefix: str) -> None:
 
 
 
-def render_pump_operating_point_tab() -> None:
+def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
     with st.expander("📖 ¿Cómo se usa esta calculadora? (guía rápida)", expanded=False):
         st.markdown(
             "Esta calculadora encuentra el **punto de operación** de tu sistema de bombeo: el caudal y "
@@ -332,12 +332,12 @@ def render_pump_operating_point_tab() -> None:
                 title=dict(text=chart_title, x=0.5),
                 xaxis_title="Caudal (L/s)", yaxis_title="Altura (m)", height=480,
                 margin=dict(l=25, r=25, t=70, b=60),
-                legend=dict(orientation="h", y=-0.2), template="plotly_white",
-                font=dict(family="Times New Roman, Times, serif", size=chart_font_size, color="#111111"),
-                paper_bgcolor="white", plot_bgcolor="white",
+                legend=dict(orientation="h", y=-0.2), template="plotly_dark" if dark_mode else "plotly_white",
+                font=dict(family="Times New Roman, Times, serif", size=chart_font_size, color="#e6edf5" if dark_mode else "#111111"),
+                paper_bgcolor="#121d2c" if dark_mode else "white", plot_bgcolor="#121d2c" if dark_mode else "white",
             )
-            fig.update_xaxes(showline=True, linecolor="#333333", ticks="outside", gridcolor="#e4e4e4")
-            fig.update_yaxes(showline=True, linecolor="#333333", ticks="outside", gridcolor="#e4e4e4")
+            fig.update_xaxes(showline=True, linecolor="#5c6f82" if dark_mode else "#333333", ticks="outside", gridcolor="#223349" if dark_mode else "#e4e4e4")
+            fig.update_yaxes(showline=True, linecolor="#5c6f82" if dark_mode else "#333333", ticks="outside", gridcolor="#223349" if dark_mode else "#e4e4e4")
             st.plotly_chart(fig, use_container_width=True, key="pump_operating_chart", config={
                 "displaylogo": False,
                 "toImageButtonOptions": {"format": export_format, "filename": "BESB_Piping_curva", "width": 1600, "height": 1000, "scale": 2 if export_format == "png" else 1},
@@ -348,7 +348,7 @@ def render_pump_operating_point_tab() -> None:
             if any(catalog_rows):
                 st.caption("Catálogos · datos preliminares pendientes de revisión humana.")
 
-        _render_energy_profile(segments, fluid, nominal, static_head_m)
+        _render_energy_profile(segments, fluid, nominal, static_head_m, dark_mode=dark_mode)
         _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree)
         st.subheader("5 · Verificaciones y descarga")
         st.caption("Después de revisar el caudal, comprueba presión, velocidad y, si tienes los datos, succión y cierre de válvulas.")
@@ -981,7 +981,7 @@ def _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree):
         st.caption("Afinidad para cambio de velocidad N. Bombas idénticas: en paralelo se suman caudales a igual H; en serie se suman alturas a igual Q. La eficiencia de cada punto se traslada con la curva; una eficiencia constante sigue siendo un supuesto.")
 
 
-def _render_energy_profile(segments, fluid, nominal, static_head_m):
+def _render_energy_profile(segments, fluid, nominal, static_head_m, dark_mode: bool = False):
     with st.expander("Perfil de energía y presión · ilustrativo", expanded=True):
         st.caption("Bomba al inicio, origen de cotas en el depósito de succión. Se supone una pendiente uniforme y se reparten las pérdidas de cada tramo a lo largo de su longitud. No hay cotas de terreno ni ubicación real de accesorios: este perfil no verifica presiones de diseño.")
         if not nominal:
@@ -990,17 +990,18 @@ def _render_energy_profile(segments, fluid, nominal, static_head_m):
         rows = illustrative_profile(segments, nominal['Q (L/s)']/1000, nominal['H (m)'], static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
         fig = go.Figure()
         for field, label, color, dash, axis in [
-            ('energia_m', 'Energía total (m)', '#526578', 'dot', 'y'),
-            ('piezometrica_m', 'Cota piezométrica (m)', '#155A8A', 'solid', 'y'),
-            ('cota_m', 'Cota supuesta de tubería (m)', '#777777', 'solid', 'y'),
-            ('presion_bar', 'Presión relativa (bar)', '#0599A5', 'dash', 'y2')]:
+            ('energia_m', 'Energía total (m)', '#8aa0b4' if dark_mode else '#526578', 'dot', 'y'),
+            ('piezometrica_m', 'Cota piezométrica (m)', '#4fa3e3' if dark_mode else '#155A8A', 'solid', 'y'),
+            ('cota_m', 'Cota supuesta de tubería (m)', '#9aa5ae' if dark_mode else '#777777', 'solid', 'y'),
+            ('presion_bar', 'Presión relativa (bar)', '#3ec9d6' if dark_mode else '#0599A5', 'dash', 'y2')]:
             fig.add_trace(go.Scatter(x=[r['distancia_m'] for r in rows], y=[r[field] for r in rows], name=label, mode='lines', line=dict(color=color, dash=dash), yaxis=axis))
         for row in rows[1:-1:2]:
-            fig.add_vline(x=row['distancia_m'], line_dash='dot', line_color='#cccccc')
-        fig.update_layout(template='plotly_white', height=420, font=dict(family='Times New Roman, Times, serif', size=16),
+            fig.add_vline(x=row['distancia_m'], line_dash='dot', line_color='#3a4f63' if dark_mode else '#cccccc')
+        fig.update_layout(template='plotly_dark' if dark_mode else 'plotly_white', height=420, font=dict(family='Times New Roman, Times, serif', size=16),
                           xaxis_title='Distancia desde la bomba (m)', yaxis_title='Cota / energía (m)',
                           yaxis2=dict(title='Presión relativa (bar)', overlaying='y', side='right'),
-                          legend=dict(orientation='h', y=-0.25), margin=dict(t=20, b=100))
+                          legend=dict(orientation='h', y=-0.25), margin=dict(t=20, b=100),
+                          paper_bgcolor="#121d2c" if dark_mode else "white", plot_bgcolor="#121d2c" if dark_mode else "white")
         st.plotly_chart(fig, use_container_width=True, key='pump_energy_profile', config={'displaylogo': False, 'toImageButtonOptions': {'format':st.session_state.get('pump_chart_format','png'), 'filename':'BESB_Piping_perfil', 'width':1600,'height':1000,'scale':2}})
         st.latex(r"E(x)=H_b-\sum h_{\mathrm{pérdidas}},\quad H_p=E-v^2/(2g),\quad p=\rho g(H_p-z)/10^5\;[bar]")
         st.caption("Los cambios de diámetro producen saltos de cota piezométrica por el cambio de velocidad. Las pérdidas de reductores deben ingresarse como accesorios. No se fuerza el extremo del gráfico a presión cero.")
