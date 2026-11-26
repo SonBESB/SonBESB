@@ -37,7 +37,7 @@ from core.hydraulics.operating_point import solve_operating_point
 from core.hydraulics.power import compute_power
 from core.hydraulics.pressure_rating import PN_BAR_TABLE, build_shutoff_pressure_profile
 from core.hydraulics.surge import PIPE_ELASTIC_MODULUS_PA, WATER_BULK_MODULUS_PA, compute_surge
-from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system
+from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system, pressure_boundary_head_m
 from core.hydraulics.velocity_check import DEFAULT_MAX_VELOCITY_M_S, DEFAULT_MIN_VELOCITY_M_S, check_velocity
 
 _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadrática (grado 2)": 2, "Cúbica (grado 3)": 3}
@@ -160,13 +160,42 @@ def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
     with st.expander("1 · Líquido y desnivel", expanded=stage == stages[0]):
         st.write("Para agua, basta con indicar su temperatura. El desnivel es la cota del destino menos la cota del origen.")
         fluid = _render_fluid_section("pump")
-        static_head_m = st.number_input(
+        desnivel_geometrico_m = st.number_input(
             "Desnivel entre destino y origen (m)",
             value=18.5, step=0.1, key="pump_static_head",
             help="Ejemplo: origen a 100 m y destino a 118,5 m → 18,5 m. No es la longitud de tubería. Si el destino está más abajo, usa un valor negativo.",
         )
-
         st.caption("Ejemplo: origen 100 m → destino 118,5 m → desnivel +18,5 m.")
+
+        with st.expander("Presión de borde en el origen y el destino (opcional)", expanded=False):
+            st.caption(
+                "Úsalo cuando el sistema conecta a una red existente con presión conocida en el origen "
+                "(p. ej. un tie-in) y debe entregar a una presión mínima en el destino (p. ej. una sala "
+                "de proceso). Se convierte a una carga equivalente y se suma al desnivel geométrico; no "
+                "se mezcla con la fricción ni con el % de accesorios."
+            )
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                p_disponible_bar = st.number_input(
+                    "Presión disponible en el origen / Tie-in (bar)",
+                    value=0.0, step=0.1, key="pump_p_tiein_bar",
+                    help="Presión ya existente en el punto de succión u origen. 0 si el origen es un depósito abierto.",
+                )
+            with col_p2:
+                p_requerida_bar = st.number_input(
+                    "Presión requerida en el destino (bar)",
+                    value=0.0, step=0.1, key="pump_p_destino_bar",
+                    help="Presión mínima exigida en el punto de entrega. 0 si la descarga es abierta.",
+                )
+            delta_head_m = pressure_boundary_head_m(p_disponible_bar, p_requerida_bar, fluid.density_kg_m3)
+            if p_disponible_bar or p_requerida_bar:
+                signo = "+" if delta_head_m >= 0 else "−"
+                st.caption(
+                    f"Ajuste por presión de borde: ({p_requerida_bar:g} − {p_disponible_bar:g}) bar ÷ (ρ·g) = "
+                    f"{signo}{abs(delta_head_m):.2f} m sobre el desnivel geométrico. "
+                    f"Desnivel efectivo usado en el cálculo: {desnivel_geometrico_m + delta_head_m:.2f} m."
+                )
+        static_head_m = desnivel_geometrico_m + delta_head_m
         st.button("Continuar a tuberías →", key="nav_to_pipes", on_click=go_stage, args=(1,))
     with st.expander("2 · Tuberías y accesorios", expanded=stage == stages[1]):
         st.write("Comienza con un tramo. Ingresa la longitud real del recorrido y el diámetro INTERIOR, o elige una referencia HDPE PE100 o PEXGOL para cargar sus dimensiones.")
@@ -210,7 +239,8 @@ def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
         return
 
     with st.expander("Resumen de los datos ingresados", expanded=stage == stages[3]):
-        st.write(f"{fluid.name} · {fluid.temperature_c:g} °C · Desnivel {static_head_m:g} m · {len(segments)} tramo(s) · {len(q_points)} puntos de bomba")
+        desnivel_label = "Desnivel" if static_head_m == desnivel_geometrico_m else "Desnivel efectivo (incl. presión de borde)"
+        st.write(f"{fluid.name} · {fluid.temperature_c:g} °C · {desnivel_label} {static_head_m:.2f} m · {len(segments)} tramo(s) · {len(q_points)} puntos de bomba")
         st.dataframe([{"Tramo": seg.label, "Longitud (m)": seg.length_m, "DI usado (mm)": seg.inside_diameter_mm, "ΣK": _sigma_k_display(seg)} for seg in segments], hide_index=True)
     q_max_curve = max(q_points) / 1000.0
     flow_range = np.linspace(0.0, q_max_curve * 1.05, 60).tolist()
@@ -411,7 +441,7 @@ def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
             st.warning("Caso PRELIMINAR: contiene datos de catálogo pendientes de revisión.")
         st.markdown(_build_executive_summary(nominal, results, npsh_result, segments, velocity_checks, pressure_checks, surge_result))
 
-        _render_export_section("pump", fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows, fig, scenarios)
+        _render_export_section("pump", fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows, fig, scenarios, desnivel_geometrico_m=desnivel_geometrico_m, p_disponible_bar=p_disponible_bar, p_requerida_bar=p_requerida_bar)
 
 
 def _render_fluid_section(key_prefix: str) -> FluidProperties:
@@ -805,7 +835,7 @@ def _render_surge_section(key_prefix, segments, fluid, nominal, catalog_rows=Non
         return result
 
 
-def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows=None, figure=None, scenarios=None):
+def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m, q_points, h_points, eta_points, degree, results, nominal, npsh_result, pressure_checks, surge_result, catalog_rows=None, figure=None, scenarios=None, desnivel_geometrico_m=None, p_disponible_bar=0.0, p_requerida_bar=0.0):
     st.subheader("Descarga tu memoria y los datos del caso")
     case = {
         "proyecto": st.session_state.get("pump_project_name", "Mi sistema de bombeo"),
@@ -832,6 +862,9 @@ def _render_export_section(key_prefix, fluid, segments, pn_labels, static_head_m
             "color_bomba": st.session_state.get("pump_chart_pump_color", "#155A8A"),
         },
         "altura_estatica_m": static_head_m,
+        "desnivel_geometrico_m": desnivel_geometrico_m if desnivel_geometrico_m is not None else static_head_m,
+        "presion_disponible_origen_bar": p_disponible_bar,
+        "presion_requerida_destino_bar": p_requerida_bar,
         "curva_bomba": {"grado_ajuste": degree, "puntos": [{"Q_L_s": q, "H_m": h, "eta_pct": e} for q, h, e in zip(q_points, h_points, eta_points)]},
         "resultados_por_escenario": results,
         "npsh": None if npsh_result is None else {

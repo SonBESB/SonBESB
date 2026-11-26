@@ -21,8 +21,24 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from core.hydraulics.friction import FlowRegime, colebrook_white, darcy_weisbach_head_loss_m, reynolds_number
+from core.hydraulics.friction import GRAVITY_M_S2, FlowRegime, colebrook_white, darcy_weisbach_head_loss_m, reynolds_number
 from core.hydraulics.minor_losses import minor_loss_head_m, total_minor_loss_coefficient
+
+
+def pressure_boundary_head_m(
+    available_bar: float, required_bar: float, density_kg_m3: float, g: float = GRAVITY_M_S2
+) -> float:
+    """Carga equivalente (m) que se suma al desnivel geometrico cuando el
+    sistema no descarga a presion atmosferica en ambos extremos: p.ej. un
+    tie-in a una red existente a `available_bar` que debe entregar a
+    `required_bar` en el destino (una sala de proceso, un cabezal presurizado).
+
+    Positivo exige mas carga a la bomba; negativo indica que la presion ya
+    disponible en el origen cubre parte o toda la presion requerida en el
+    destino. 0/0 (ambos extremos abiertos a la atmosfera) da 0, sin efecto
+    sobre el desnivel.
+    """
+    return (required_bar - available_bar) * 1e5 / (density_kg_m3 * g)
 
 
 @dataclass(frozen=True)
