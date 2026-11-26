@@ -36,7 +36,7 @@ from core.hydraulics.fluids import FluidProperties, TemperatureOutOfRangeError, 
 from core.hydraulics.minor_losses import FITTING_K_DISCREPANCIES, FITTING_K_TABLE
 from core.hydraulics.npsh import DEFAULT_NPSH_SAFETY_MARGIN_M, check_npsh, npsh_available
 from core.hydraulics.operating_point import solve_operating_point
-from core.hydraulics.power import compute_power
+from core.hydraulics.power import compute_power, hydraulic_power_w
 from core.hydraulics.pressure_rating import PN_BAR_TABLE, build_shutoff_pressure_profile
 from core.hydraulics.surge import PIPE_ELASTIC_MODULUS_PA, WATER_BULK_MODULUS_PA, compute_surge
 from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system, pressure_boundary_head_m, pressure_to_head_m
@@ -192,6 +192,7 @@ def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
     stages = ["1 · Líquido", "2 · Tuberías", "3 · Bomba", "4 · Resultados"]
     stage = _render_stepper(stages, key="nav_stage")
     st.caption("Los valores iniciales son un ejemplo. Reemplázalos por los de tu instalación. Los cálculos se actualizan al cambiar un dato.")
+    summary_slot = st.container()
     def go_stage(index):
         st.session_state.nav_stage = stages[index]
     with st.expander("1 · Líquido y desnivel", expanded=stage == stages[0]):
@@ -384,6 +385,28 @@ def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
     if no_pump_mode and design_flow_l_s:
         design_eval = evaluate_system(segments, design_flow_l_s / 1000.0, static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
         nominal_for_checks = {"Q (L/s)": design_flow_l_s, "H (m)": design_eval.total_head_m}
+
+    with summary_slot:
+        with st.container(border=True):
+            st.caption("📊 RESUMEN — se actualiza con cualquier dato que cambies, en cualquier paso")
+            s1, s2, s3 = st.columns(3)
+            if nominal:
+                s1.metric("Caudal", f"{nominal['Q (L/s)']:.2f} L/s")
+                s2.metric("Altura", f"{nominal['H (m)']:.2f} m")
+                s3.metric("Potencia hidráulica", f"{nominal['P hidráulica (kW)']:.2f} kW")
+            elif no_pump_mode and design_eval is not None:
+                s1.metric("Caudal de diseño", f"{design_flow_l_s:.2f} L/s")
+                s2.metric("Altura adicional", f"{design_eval.total_head_m:.2f} m.c.a.")
+                s3.metric(
+                    "Potencia hidráulica",
+                    f"{hydraulic_power_w(fluid.density_kg_m3, design_flow_l_s / 1000.0, design_eval.total_head_m) / 1000:.2f} kW",
+                )
+            else:
+                s1.metric("Caudal", "—")
+                s2.metric("Altura", "—")
+                s3.metric("Potencia hidráulica", "—")
+                st.caption("Completa el líquido, la tubería y la bomba (o el caudal de diseño) para ver el resultado aquí.")
+
     with st.expander("4 · Resultados, verificaciones y descarga", expanded=stage == stages[3]):
         with st.container(border=True):
             if no_pump_mode:
