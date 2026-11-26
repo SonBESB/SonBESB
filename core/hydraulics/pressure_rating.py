@@ -67,6 +67,7 @@ def build_shutoff_pressure_profile(
     g: float = 9.80665,
     *,
     allowable_pressures_bar: list[float] | None = None,
+    inlet_pressure_head_m: float = 0.0,
 ) -> list[SegmentPressureCheck]:
     """Presion de diseno (a Q=0) al inicio de cada tramo vs su clase PN.
 
@@ -74,7 +75,15 @@ def build_shutoff_pressure_profile(
     allowable_pressures_bar permite limites de catalogo por temperatura;
     si se omite se conserva el lookup PN nominal a 20 C.
     La elevacion se reparte proporcional a la longitud acumulada de
-    static_head_m (ver limitacion en el docstring del modulo).
+    static_head_m, que aqui debe ser la elevacion geometrica REAL (ver
+    limitacion de perfil uniforme en el docstring del modulo) — nunca un
+    "desnivel efectivo" con una presion de borde ya sumada.
+
+    inlet_pressure_head_m es la carga (m) de una presion real ya disponible
+    en la succion de la bomba (p.ej. un tie-in presurizado), que se suma
+    directamente al shutoff: a caudal cero esa presion llega integra a la
+    descarga, igual que el shutoff head de la bomba. 0.0 (default) reproduce
+    el supuesto anterior de succion a presion atmosferica.
     """
     if len(segments) != len(pn_labels):
         raise ValueError("segments y pn_labels deben tener el mismo largo.")
@@ -97,7 +106,7 @@ def build_shutoff_pressure_profile(
         pn_bar = PN_BAR_TABLE[pn_label] if allowable_pressures_bar is None else allowable_pressures_bar[i]
 
         elevation_at_start = static_head_m * (cumulative / total_length)
-        pressure_head_at_start = shutoff_head_m - elevation_at_start
+        pressure_head_at_start = inlet_pressure_head_m + shutoff_head_m - elevation_at_start
         pressure_bar = max(pressure_head_at_start, 0.0) * density_kg_m3 * g / PASCAL_PER_BAR
 
         results.append(

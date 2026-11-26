@@ -45,6 +45,21 @@ def test_shutoff_pressure_profile_decreases_with_elevation_gain():
     assert checks[1].max_design_pressure_bar < checks[0].max_design_pressure_bar
 
 
+def test_shutoff_pressure_profile_adds_real_inlet_pressure_at_zero_elevation():
+    # Un tie-in presurizado en la succion suma directamente a la presion de
+    # shutoff en la descarga (a caudal cero, esa presion llega integra).
+    segments = [PipeSegment(label="Tramo 1", length_m=100, inside_diameter_mm=200, roughness_mm=0.007)]
+    baseline = build_shutoff_pressure_profile(
+        segments, shutoff_head_m=40.0, static_head_m=0.0, density_kg_m3=1000.0, pn_labels=["PN10"]
+    )
+    with_inlet = build_shutoff_pressure_profile(
+        segments, shutoff_head_m=40.0, static_head_m=0.0, density_kg_m3=1000.0, pn_labels=["PN10"],
+        inlet_pressure_head_m=10.0,
+    )
+    expected_extra_bar = 10.0 * 1000.0 * 9.80665 / 1e5
+    assert with_inlet[0].max_design_pressure_bar == pytest.approx(baseline[0].max_design_pressure_bar + expected_extra_bar)
+
+
 def test_shutoff_pressure_profile_rejects_unknown_pn():
     segments = [PipeSegment(label="Tramo 1", length_m=100, inside_diameter_mm=100, roughness_mm=0.01)]
     with pytest.raises(KeyError):

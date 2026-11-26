@@ -37,7 +37,7 @@ from core.hydraulics.operating_point import solve_operating_point
 from core.hydraulics.power import compute_power
 from core.hydraulics.pressure_rating import PN_BAR_TABLE, build_shutoff_pressure_profile
 from core.hydraulics.surge import PIPE_ELASTIC_MODULUS_PA, WATER_BULK_MODULUS_PA, compute_surge
-from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system, pressure_boundary_head_m
+from core.hydraulics.system_curve import PipeSegment, build_system_curve, evaluate_system, pressure_boundary_head_m, pressure_to_head_m
 from core.hydraulics.velocity_check import DEFAULT_MAX_VELOCITY_M_S, DEFAULT_MIN_VELOCITY_M_S, check_velocity
 
 _DEGREE_LABELS = {"Constante (grado 0)": 0, "Lineal (grado 1)": 1, "Cuadrática (grado 2)": 2, "Cúbica (grado 3)": 3}
@@ -445,7 +445,7 @@ def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
             if any(catalog_rows):
                 st.caption("Catálogos · datos preliminares pendientes de revisión humana.")
 
-        _render_energy_profile(segments, fluid, nominal_for_checks, static_head_m, dark_mode=dark_mode)
+        _render_energy_profile(segments, fluid, nominal_for_checks, desnivel_geometrico_m, dark_mode=dark_mode, no_pump_mode=no_pump_mode, inlet_pressure_head_bar=p_disponible_bar)
         _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree)
         st.subheader("5 · Verificaciones y descarga")
         st.caption("Después de revisar el caudal, comprueba presión, velocidad y, si tienes los datos, succión y cierre de válvulas.")
@@ -499,7 +499,7 @@ def render_pump_operating_point_tab(dark_mode: bool = False) -> None:
                 st.info("Sin punto de operación nominal (ver estado en la tabla de resultados) — no se muestra detalle por tramo.")
 
         with st.expander("Presión admisible de las tuberías"):
-            pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, static_head_m, catalog_rows)
+            pressure_checks = _render_pressure_rating_section("pump", segments, pn_labels, nominal_shutoff_head_m, fluid, desnivel_geometrico_m, catalog_rows, inlet_pressure_head_bar=p_disponible_bar)
         npsh_result = _render_npsh_section("pump", fluid, nominal_for_checks)
         surge_result = _render_surge_section("pump", segments, fluid, nominal_for_checks, catalog_rows)
 
@@ -782,11 +782,12 @@ def _render_npsh_section(key_prefix: str, fluid: FluidProperties, nominal: dict 
         return check
 
 
-def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_head_m, fluid, static_head_m, catalog_rows=None):
+def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_head_m, fluid, elevation_gain_m, catalog_rows=None, inlet_pressure_head_bar=0.0):
     st.subheader("Presión de diseño vs clase PN (condición de caudal cero / shutoff)")
     st.caption(
         "A caudal "
-        "cero no hay pérdida por fricción: toda la carga de la bomba en Q=0 aparece como "
+        "cero no hay pérdida por fricción: toda la carga de la bomba en Q=0 (más la presión "
+        "real de un tie-in presurizado en la succión, si la ingresaste) aparece como "
         "presión estática en la descarga — es la condición más exigente en régimen "
         "permanente (sin contar golpe de ariete, ver sección aparte). Perfil de elevación "
         "repartido proporcional a la longitud — ver limitación en "
@@ -803,7 +804,11 @@ def _render_pressure_rating_section(key_prefix, segments, pn_labels, shutoff_hea
         return None
     if any(catalog_rows):
         st.warning("Comparación PRELIMINAR con catálogo sin verificar. PASS no significa aprobación para diseño.")
-    checks = build_shutoff_pressure_profile(segments, shutoff_head_m, static_head_m, fluid.density_kg_m3, pn_labels, allowable_pressures_bar=limits)
+    inlet_pressure_head_m = pressure_to_head_m(inlet_pressure_head_bar, fluid.density_kg_m3) if inlet_pressure_head_bar else 0.0
+    checks = build_shutoff_pressure_profile(
+        segments, shutoff_head_m, elevation_gain_m, fluid.density_kg_m3, pn_labels,
+        allowable_pressures_bar=limits, inlet_pressure_head_m=inlet_pressure_head_m,
+    )
     st.dataframe(
         [
             {
@@ -1099,13 +1104,24 @@ def _render_formula_guide(fluid, segments, nominal, q_points, h_points, degree):
         st.caption("Afinidad para cambio de velocidad N. Bombas idénticas: en paralelo se suman caudales a igual H; en serie se suman alturas a igual Q. La eficiencia de cada punto se traslada con la curva; una eficiencia constante sigue siendo un supuesto.")
 
 
-def _render_energy_profile(segments, fluid, nominal, static_head_m, dark_mode: bool = False):
+def _render_energy_profile(segments, fluid, nominal, elevation_gain_m, dark_mode: bool = False, no_pump_mode: bool = False, inlet_pressure_head_bar: float = 0.0):
+    """elevation_gain_m debe ser el desnivel geométrico REAL (nunca el
+    "desnivel efectivo" con presión de borde ya sumada) — ver aviso en
+    pressure_boundary_head_m. La presión de entrada real (tie-in) y el
+    aporte mecánico de una bomba (0 si no hay bomba todavía) se modelan
+    por separado para que la línea piezométrica refleje la instalación
+    real, no la carga equivalente usada para dimensionar la bomba."""
     with st.expander("Perfil de energía y presión · ilustrativo", expanded=True):
-        st.caption("Bomba al inicio, origen de cotas en el depósito de succión. Se supone una pendiente uniforme y se reparten las pérdidas de cada tramo a lo largo de su longitud. No hay cotas de terreno ni ubicación real de accesorios: este perfil no verifica presiones de diseño.")
+        st.caption("Origen de cotas en el punto de entrada (tie-in o depósito de succión). Se supone una pendiente uniforme y se reparten las pérdidas de cada tramo a lo largo de su longitud. No hay cotas de terreno intermedias: este perfil no verifica presiones de diseño.")
         if not nominal:
-            st.info("Se necesita un punto de operación nominal para dibujar el perfil.")
+            st.info("Se necesita un punto de operación (o un caudal de diseño) para dibujar el perfil.")
             return
-        rows = illustrative_profile(segments, nominal['Q (L/s)']/1000, nominal['H (m)'], static_head_m, fluid.density_kg_m3, fluid.viscosity_pa_s)
+        inlet_pressure_head_m = pressure_to_head_m(inlet_pressure_head_bar, fluid.density_kg_m3) if inlet_pressure_head_bar else 0.0
+        pump_head_m = 0.0 if no_pump_mode else nominal['H (m)']
+        rows = illustrative_profile(
+            segments, nominal['Q (L/s)'] / 1000, pump_head_m, elevation_gain_m, fluid.density_kg_m3,
+            fluid.viscosity_pa_s, inlet_pressure_head_m=inlet_pressure_head_m,
+        )
         fig = go.Figure()
         for field, label, color, dash, axis in [
             ('energia_m', 'Energía total (m)', '#8aa0b4' if dark_mode else '#526578', 'dot', 'y'),
@@ -1121,8 +1137,15 @@ def _render_energy_profile(segments, fluid, nominal, static_head_m, dark_mode: b
                           legend=dict(orientation='h', y=-0.25), margin=dict(t=20, b=100),
                           paper_bgcolor="#121d2c" if dark_mode else "white", plot_bgcolor="#121d2c" if dark_mode else "white")
         st.plotly_chart(fig, use_container_width=True, key='pump_energy_profile', config={'displaylogo': False, 'toImageButtonOptions': {'format':st.session_state.get('pump_chart_format','png'), 'filename':'BESB_Piping_perfil', 'width':1600,'height':1000,'scale':2}})
-        st.latex(r"E(x)=H_b-\sum h_{\mathrm{pérdidas}},\quad H_p=E-v^2/(2g),\quad p=\rho g(H_p-z)/10^5\;[bar]")
+        st.latex(r"E(x)=p_{\mathrm{entrada}}+H_b-\sum h_{\mathrm{pérdidas}},\quad H_p=E-v^2/(2g),\quad p=\rho g(H_p-z)/10^5\;[bar]")
         st.caption("Los cambios de diámetro producen saltos de cota piezométrica por el cambio de velocidad. Las pérdidas de reductores deben ingresarse como accesorios. No se fuerza el extremo del gráfico a presión cero.")
+        if no_pump_mode:
+            st.metric("Presión residual estimada en el destino (sin bombeo)", f"{rows[-1]['presion_bar']:.3f} bar")
+            st.caption(
+                "Presión que llegaría al destino con la presión de entrada ingresada, el desnivel "
+                "geométrico real y las pérdidas calculadas — sin ningún aporte de bomba. Compárala "
+                "con la presión mínima que exige la instalación para decidir si realmente se necesita bombear."
+            )
         if any(r['presion_bar'] < 0 for r in rows):
             st.warning("El perfil supuesto presenta presión relativa negativa. Revisa cotas, condiciones de borde y pérdidas con un modelo detallado antes de interpretar el resultado.")
         if st.checkbox("Ver valores del perfil por tramo", key='pump_profile_table'):

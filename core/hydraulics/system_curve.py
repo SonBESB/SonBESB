@@ -25,6 +25,11 @@ from core.hydraulics.friction import GRAVITY_M_S2, FlowRegime, colebrook_white, 
 from core.hydraulics.minor_losses import minor_loss_head_m, total_minor_loss_coefficient
 
 
+def pressure_to_head_m(pressure_bar: float, density_kg_m3: float, g: float = GRAVITY_M_S2) -> float:
+    """Convierte una presion (bar) a su carga equivalente (m) para una densidad dada."""
+    return pressure_bar * 1e5 / (density_kg_m3 * g)
+
+
 def pressure_boundary_head_m(
     available_bar: float, required_bar: float, density_kg_m3: float, g: float = GRAVITY_M_S2
 ) -> float:
@@ -37,8 +42,17 @@ def pressure_boundary_head_m(
     disponible en el origen cubre parte o toda la presion requerida en el
     destino. 0/0 (ambos extremos abiertos a la atmosfera) da 0, sin efecto
     sobre el desnivel.
+
+    Esta suma (desnivel geometrico + esta carga) es valida como "desnivel
+    efectivo" para resolver el punto de equilibrio bomba-sistema (ver
+    evaluate_system/build_system_curve), pero NO debe reutilizarse como si
+    fuera la elevacion real en un perfil de presion fisico: ese calculo
+    necesita el desnivel geometrico y la presion de entrada por separado
+    (ver pressure_to_head_m), nunca esta mezcla. Mezclarlos ahi hace que el
+    perfil "ilustrativo" reporte presiones negativas espurias que no
+    reflejan la instalacion real.
     """
-    return (required_bar - available_bar) * 1e5 / (density_kg_m3 * g)
+    return pressure_to_head_m(required_bar, density_kg_m3, g) - pressure_to_head_m(available_bar, density_kg_m3, g)
 
 
 @dataclass(frozen=True)
