@@ -223,6 +223,37 @@ elevacion real, y entrega la presion que efectivamente llegaria al destino
 sin ningun aporte de bomba — independiente de cualquier presion "requerida"
 que se haya ingresado como supuesto de diseño.
 
+## Importar una tabla de requisitos (CSV)
+
+Modulo `core/hydraulics/requirements_import.py`, expuesto en la UI como
+"📥 Importar tabla de requisitos (CSV)" al inicio de la calculadora. Pensado
+para el flujo de trabajo real: el usuario ya trae una tabla de requisitos de
+ingenieria (como la de OT-120 — parametro/valor) y quiere que la calculadora
+arranque con esos datos en vez de reescribirlos campo por campo.
+
+Formato esperado: CSV de dos columnas, `parametro,valor`. Tolera acentos,
+mayusculas, unidades inline ("12,50 m", "2,5 bar", "82 L/min = 1,3667 L/s")
+y separador decimal "," o ".". La lista completa de nombres de parametro
+reconocidos esta en `_KEY_ALIASES` del modulo.
+
+**Mismo limite deliberado que la libreria de casos guardados, y por la misma
+razon** (ver seccion de arriba): solo se rellenan campos INDEPENDIENTES —
+fluido, temperatura, desnivel geometrico, presiones de borde, un tramo con
+geometria MANUAL (longitud, diametro interior, rugosidad, clase PN, % de
+accesorios) y el caudal de diseno (que activa el modo sin bomba). Nunca se
+rellenan: accesorios detallados por pieza, selecciones de catalogo
+HDPE/PEXGOL, la curva Q-H de la bomba, ni escenarios VDF — esas claves de
+estado son interdependientes entre si y reconstruirlas mal desde un CSV
+generico es peor que dejarlas en blanco. Mas de un tramo tampoco se soporta
+todavia (solo Tramo 1); con varios tramos reales, se completan a mano los
+siguientes.
+
+Cada parametro no reconocido o fuera de este alcance se lista explicitamente
+en la UI ("N parametro(s) no importado(s)") en vez de fallar en silencio. Un
+archivo ya aplicado no se vuelve a aplicar solo en cada rerun (se guarda su
+hash en `session_state`): el usuario puede editar los campos despues de
+importar sin que la importacion los pise de vuelta.
+
 ## Libreria de calculos guardados (Supabase)
 
 Modulo `core/hydraulics/pumping_library.py`. Persiste casos (el mismo
